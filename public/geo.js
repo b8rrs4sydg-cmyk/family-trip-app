@@ -1,6 +1,6 @@
 // 前後端共用的地理與顯示小工具(純函式,方便測試)。
 
-export const DAY_COLORS = ['#2f6fb0', '#c93d27', '#2f8a6b', '#8a5aa8', '#c9702a', '#0f8b8d', '#b5446e', '#6b7a1f'];
+export const DAY_COLORS = ['#2563eb', '#e11d48', '#059669', '#7c3aed', '#ea580c', '#0891b2', '#c026d3', '#65a30d'];
 export const dayColor = (day) => (day > 0 ? DAY_COLORS[(day - 1) % DAY_COLORS.length] : '#8a8a8a');
 
 export const hasCoord = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
