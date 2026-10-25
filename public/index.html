@@ -386,6 +386,14 @@
       <div><label class="f" for="sCost">花費(日圓 ¥)</label><input class="field" id="sCost" type="number" inputmode="numeric" min="0" step="1" placeholder="不填就是沒有"></div>
       <div class="full"><label class="f" for="sNote">備註(例如:要預約、幾點開門)</label><input class="field" id="sNote" maxlength="300"></div>
     </div>
+    <div class="copybox">
+      <label class="f" for="sCopyDay" style="margin-top:14px">複製這個地點到其他天(例如住宿當每天的出發點、回來點)</label>
+      <div class="row" style="flex-wrap:nowrap">
+        <select class="field" id="sCopyDay" style="flex:1"></select>
+        <select class="field" id="sCopyWhere" style="flex:1"><option value="start">當天最前面(出發)</option><option value="end">當天最後面(回來)</option></select>
+        <button class="btn soft" type="button" id="sCopy" style="flex:none">複製</button>
+      </div>
+    </div>
     <p style="margin-top:12px"><button class="btn soft block" type="button" id="sPin"><i data-i="target"></i>在地圖上點選位置</button></p>
     <div class="actions">
       <button class="btn danger" type="button" id="sDel"><i data-i="trash"></i>刪除</button>
@@ -1261,6 +1269,7 @@ function openSheet(it, day, idx) {
   const sel = $('sDay');
   sel.replaceChildren(el('option', { value: 0 }, '還沒安排'), ...Array.from({ length: trip.days }, (_, i) => el('option', { value: i + 1 }, `第 ${i + 1} 天`)));
   sel.value = String(it.day);
+  $('sCopyDay').replaceChildren(el('option', { value: 'all' }, '每一天'), ...Array.from({ length: trip.days }, (_, i) => el('option', { value: i + 1 }, `第 ${i + 1} 天`)));
   $('sheet').showModal();
 }
 
@@ -1281,6 +1290,17 @@ function setupSheets() {
         await api('PUT', `/${tripId}/layout`, { layout });
       }
     }, newDay !== it.day ? `已移到${newDay ? `第 ${newDay} 天` : '還沒安排'}` : '已儲存');
+  };
+  $('sCopy').onclick = async () => {
+    const it = editing?.it; if (!it) return;
+    const v = $('sCopyDay').value;
+    const days = v === 'all' ? Array.from({ length: trip.days }, (_, i) => i + 1) : [+v];
+    const where = $('sCopyWhere').value;
+    $('sheet').close();
+    await run(async () => {
+      const r = await api('POST', `/${tripId}/items/${it.id}/copy`, { days, where });
+      toast(`已複製「${it.name}」到 ${r.copied} 天的${where === 'start' ? '最前面' : '最後面'}`);
+    });
   };
   $('sDel').onclick = async () => {
     const it = editing?.it; if (!it) return;

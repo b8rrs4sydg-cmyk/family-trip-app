@@ -6,7 +6,7 @@ import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from '
 import { geocode } from './geocode.js';
 import { suggestStay } from '../public/geo.js';
 import { transitAdvice } from './transit.js';
-import { lodgingPlan, isLodging, AI_LODGING } from './lodging.js';
+import { lodgingPlan, isLodging, AI_LODGING, COPY_MARK } from './lodging.js';
 import { suggestPlaces } from './suggest.js';
 import { computeRoute, MODES, validPoint, sanitizeDeparture } from './route.js';
 import { translateText, translateImage, DIRECTIONS, IMAGE_RE, MAX_IMAGE_CHARS } from './translate.js';
@@ -185,6 +185,29 @@ async function handle(request, env) {
     }
   }
 
+  // 把這個地點複製到其他天(例如住宿複製成每天的「出發點」或「回來點」)
+  if (parts[3] === 'items' && parts.length === 6 && parts[5] === 'copy' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const src = await env.DB.prepare(`SELECT ${ITEM_COLS} FROM items WHERE id = ? AND trip_id = ?`).bind(parts[4], tripId).first();
+    if (!src) return fail('找不到這個項目', 404);
+    const days = [...new Set((Array.isArray(body.days) ? body.days : []).map(Number))].filter((d) => Number.isInteger(d) && d >= 1 && d <= exists.days).slice(0, 14);
+    if (!days.length) return fail('請選擇要複製到哪一天');
+    const atStart = body.where === 'start';
+    const stmts = [];
+    for (const d of days) {
+      const { results } = await env.DB.prepare('SELECT id FROM items WHERE trip_id = ? AND day = ? ORDER BY position').bind(tripId, d).all();
+      const order = results.map((r) => r.id);
+      const id = crypto.randomUUID();
+      if (atStart) order.unshift(id); else order.push(id);
+      stmts.push(env.DB.prepare(
+        `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, stay)
+         VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, ?, ?)`,
+      ).bind(id, tripId, src.name, src.lat, src.lng, src.url, src.note, COPY_MARK, src.kind, src.geo_tried, src.stay), ...layoutStatements(env, tripId, { [d]: order }));
+    }
+    await env.DB.batch([...stmts, bump(env, tripId)]);
+    return json({ ok: true, copied: days.length });
+  }
+
   // 改單一項目:名稱、備註、時間
   if (parts[3] === 'items' && parts.length === 5 && method === 'PATCH') {
     const body = await request.json().catch(() => ({}));
@@ -354,6 +377,10 @@ async function handle(request, env) {
     const instruction = clean(body.instruction, 300);
     // 先清掉上次 AI 自動產生的「出發 / 回住宿」副本
     await env.DB.prepare('DELETE FROM items WHERE trip_id = ? AND added_by = ?').bind(tripId, AI_LODGING).run();
+    // 手動複製出來的住宿(出發點/回來點)也由 AI 重新安排
+    const { results: copiesOld } = await env.DB.prepare('SELECT id, name, kind FROM items WHERE trip_id = ? AND added_by = ?').bind(tripId, COPY_MARK).all();
+    const dropIds = copiesOld.filter((c) => isLodging(c)).map((c) => c.id);
+    for (const id of dropIds) await env.DB.prepare('DELETE FROM items WHERE id = ? AND trip_id = ?').bind(id, tripId).run();
     const { results } = await env.DB.prepare(
       'SELECT id, name, lat, lng, day, time, kind, fixed, stay, note FROM items WHERE trip_id = ?',
     ).bind(tripId).all();

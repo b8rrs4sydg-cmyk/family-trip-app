@@ -2,6 +2,7 @@
 import { isLodging } from '../public/geo.js';
 
 export { isLodging };
+export const COPY_MARK = '複本'; // 使用者用「複製到其他天」產生的副本
 export const AI_LODGING = 'AI住宿'; // 由 AI 排行程自動產生的「出發/回住宿」副本會標這個,重排時會先清掉
 
 // hotels: [{id, day}](day 0 = 沒指定天,視為從第 1 天起)。
