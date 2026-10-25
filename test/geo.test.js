@@ -159,3 +159,10 @@ test('機票與飯店搜尋連結帶入路線與日期', () => {
   assert.equal(h.searchParams.get('checkout'), '2026-11-22');
   assert.equal(new URL(hotelSearchUrl({ name: '某飯店', day: 0 }, '2026-11-20')).searchParams.has('checkin'), false);
 });
+
+test('長途交通:成田機場到淺草寺大眾運輸約 1.5 小時內、不會是數小時', () => {
+  const narita = { lat: 35.7720, lng: 140.3929 };
+  const t = estimateTravel(narita, asakusa, 'transit');
+  assert.ok(t.min >= 60 && t.min <= 110, `transit ${t.min}`);
+  assert.ok(estimateTravel(narita, asakusa, 'drive').min <= 100);
+});

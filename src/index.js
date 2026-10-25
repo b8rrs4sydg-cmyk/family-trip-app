@@ -26,7 +26,7 @@ const int = (v, lo, hi, d) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
 };
 
-const ITEM_COLS = 'id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried';
+const ITEM_COLS = 'id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, travel';
 const GEOCODABLE = "('place', 'hotel')"; // 吃飯、交通這類通常不是一個查得到的地名
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -197,6 +197,11 @@ async function handle(request, env) {
       const c = body.cost === '' || body.cost === null ? null : Number(body.cost);
       if (c !== null && (!Number.isFinite(c) || c < 0 || c > 1e9)) return fail('金額格式不對');
       sets.push('cost = ?'); args.push(c);
+    }
+    // 從這一站到下一站的交通方式;空字串 = 用建議的
+    if (body.travel !== undefined) {
+      if (body.travel !== '' && body.travel !== null && !MODES.includes(body.travel)) return fail('交通方式不對');
+      sets.push('travel = ?'); args.push(body.travel || null);
     }
     // 手動指定位置(在地圖上點選,或瀏覽器自己查到的座標);geoTried 單獨為 true 表示「查過了、沒找到」
     const pinned = body.lat !== undefined && body.lng !== undefined && body.lat !== null && body.lng !== null;
