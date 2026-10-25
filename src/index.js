@@ -6,6 +6,7 @@ import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from '
 import { geocode } from './geocode.js';
 import { suggestStay } from '../public/geo.js';
 import { transitAdvice } from './transit.js';
+import { lodgingPlan, isLodging, AI_LODGING } from './lodging.js';
 import { suggestPlaces } from './suggest.js';
 import { computeRoute, MODES, validPoint, sanitizeDeparture } from './route.js';
 import { translateText, translateImage, DIRECTIONS, IMAGE_RE, MAX_IMAGE_CHARS } from './translate.js';
@@ -349,21 +350,45 @@ async function handle(request, env) {
 
   // AI 排行程:指定過天數的項目(航班等)不動,其餘交給 AI 分天
   if (parts[3] === 'plan' && method === 'POST') {
-    const { results } = await env.DB.prepare(
-      'SELECT id, name, lat, lng, day, time, kind, fixed, stay FROM items WHERE trip_id = ?',
-    ).bind(tripId).all();
-    const fixed = results.filter((r) => r.fixed && r.day > 0);
-    const movable = results.filter((r) => !(r.fixed && r.day > 0));
     const body = await request.json().catch(() => ({}));
     const instruction = clean(body.instruction, 300);
-    const plan = await planTrip(env, movable, exists.days, fixed, instruction);
+    // 先清掉上次 AI 自動產生的「出發 / 回住宿」副本
+    await env.DB.prepare('DELETE FROM items WHERE trip_id = ? AND added_by = ?').bind(tripId, AI_LODGING).run();
+    const { results } = await env.DB.prepare(
+      'SELECT id, name, lat, lng, day, time, kind, fixed, stay, note FROM items WHERE trip_id = ?',
+    ).bind(tripId).all();
+    // 住宿不參與分天,而是當成每天的頭尾;有航班等指定天數的項目也不動
+    const hotels = results.filter((r) => isLodging(r));
+    const fixed = results.filter((r) => r.fixed && r.day > 0 && !isLodging(r));
+    const movable = results.filter((r) => !(r.fixed && r.day > 0) && !isLodging(r));
+    const plan = await planTrip(env, movable, exists.days, fixed, instruction, hotels);
     const byId = new Map(results.map((r) => [r.id, r]));
     const merged = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
+    const lp = lodgingPlan(hotels.map((h) => ({ id: h.id, day: h.day })), exists.days);
+    const copies = [];
+    const specToId = (spec, label) => {
+      if (!spec.copy) return spec.hotel.id;
+      const h = byId.get(spec.hotel.id);
+      const id = crypto.randomUUID();
+      copies.push(env.DB.prepare(
+        `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried)
+         VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?, NULL, 'hotel', 0, ?)`,
+      ).bind(id, tripId, h.name, h.lat, h.lng, h.url ?? null, [label, h.note].filter(Boolean).join(' · ').slice(0, 300), AI_LODGING, h.lat != null ? 2 : 0));
+      return id;
+    };
     const layout = { 0: [] };
-    merged.forEach((items, i) => { layout[i + 1] = items.map((x) => x.id); });
+    merged.forEach((items, i) => {
+      layout[i + 1] = [
+        ...lp.head[i].map((sp) => specToId(sp, '從住宿出發')),
+        ...items.map((x) => x.id),
+        ...lp.tail[i].map((sp) => specToId(sp, '回住宿休息')),
+      ];
+    });
     const tips = {};
     plan.tips.forEach((t, i) => { if (t) tips[i + 1] = t; });
     await env.DB.batch([
+      ...copies,
+      ...hotels.filter((h) => h.kind !== 'hotel').map((h) => env.DB.prepare("UPDATE items SET kind = 'hotel' WHERE id = ? AND trip_id = ?").bind(h.id, tripId)),
       ...layoutStatements(env, tripId, layout),
       env.DB.prepare('UPDATE trips SET tips = ? WHERE id = ?').bind(JSON.stringify(tips), tripId),
       ...plan.stays.map((x) => env.DB.prepare('UPDATE items SET stay = ? WHERE id = ? AND trip_id = ?').bind(x.minutes, x.id, tripId)),
@@ -376,7 +401,7 @@ async function handle(request, env) {
       added.push({ name: a.name, day: a.day });
     }
     const nameOf = new Map(results.map((r) => [r.id, r.name]));
-    return json({ ok: true, usedAi: plan.usedAi, stays: plan.stays.map((x) => ({ name: nameOf.get(x.id), minutes: x.minutes })), added });
+    return json({ ok: true, usedAi: plan.usedAi, lodging: hotels.length ? hotels[0].name : null, stays: plan.stays.map((x) => ({ name: nameOf.get(x.id), minutes: x.minutes })), added });
   }
 
   return fail('不支援的操作', 404);
