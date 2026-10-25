@@ -113,7 +113,7 @@ test('geocode:Nominatim 被擋(失敗)時改用 Photon;兩個都查無才是 nul
 test('解析器共用的 URL 與結果格式', () => {
   assert.match(nominatimUrl('淺草寺', []), /^https:\/\/nominatim\.openstreetmap\.org\/search\?/);
   assert.equal(parseNominatim([]), null);
-  assert.deepEqual(parsePhoton({ features: [{ geometry: { coordinates: [139.8, 35.7] } }] }), { lat: 35.7, lng: 139.8 });
+  assert.deepEqual(parsePhoton({ features: [{ geometry: { coordinates: [139.8, 35.7] } }] }), { lat: 35.7, lng: 139.8, text: '' });
   assert.equal(parsePhoton({ features: [{ geometry: { coordinates: ['x', 'y'] } }] }), null);
   assert.equal(parseNominatim([{ lat: '999', lon: '1' }]), null);
 });
@@ -185,4 +185,12 @@ test('geocoding urls: bounded 只在有已知地點時加上', async () => {
   assert.doesNotMatch(nominatimUrl('x', near), /bounded/);
   assert.doesNotMatch(nominatimUrl('x', [], undefined, true), /bounded/);
   assert.match(photonUrl('x', near, undefined, true), /bbox=/);
+});
+
+test('relevant: 中日文查詢要有連續兩字出現在結果裡', async () => {
+  const { relevant } = await import('../public/geocoding.js');
+  assert.equal(relevant('淺草今昔', '西, 東金源線, 植草, 山武市'), false);
+  assert.equal(relevant('淺草寺', '浅草寺 淺草寺 Sensō-ji'), true);
+  assert.equal(relevant('Sanrio Puroland', 'サンリオピューロランド'), true);
+  assert.equal(relevant('東京鐵塔', ''), true);
 });
