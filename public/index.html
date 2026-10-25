@@ -1191,14 +1191,14 @@ function sortDay(day) {
 }
 
 // render 會換掉整批元素,所以用 id 對應舊位置再滑過去
-function slideTo(mutate) {
-  const top = new Map([...document.querySelectorAll('.it[data-id]')].map((r) => [r.dataset.id, r.getBoundingClientRect().top]));
-  mutate();
-  document.querySelectorAll('.it[data-id]').forEach((r) => {
+const captureTops = () => new Map([...document.querySelectorAll('#days .it[data-id]')].map((r) => [r.dataset.id, r.getBoundingClientRect().top]));
+function playSlide(top) {
+  document.querySelectorAll('#days .it[data-id]').forEach((r) => {
     const dy = top.get(r.dataset.id) - r.getBoundingClientRect().top;
-    if (Number.isFinite(dy) && Math.abs(dy) > 1) r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    if (Number.isFinite(dy) && Math.abs(dy) > 1) r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.8,.2,1)' });
   });
 }
+function slideTo(mutate) { const top = captureTops(); mutate(); playSlide(top); }
 
 // FLIP:元素換位置時,從舊位置滑到新位置
 function flipRows(mutate, root = $('days')) {
@@ -1453,9 +1453,11 @@ function setupPreview() {
         tips: pv.keepTips ? null : pv.tips,
         stays: [...pv.stays].map(([id, minutes]) => ({ id, minutes })),
       });
+      const tops = captureTops();
       $('pv').close();
       fitNext = true;
       await refresh(true);
+      playSlide(tops);
       const notes = (r.added || []).map((x) => `第 ${x.day} 天加了「${x.name}」`);
       toast(['已套用 AI 排好的行程', ...notes].join('\n'), false, { label: '復原', run: () => undoPlan(snapshot) });
     } catch (e) { toast(e.message, true); } finally { $('pvApply').disabled = false; }
