@@ -699,7 +699,7 @@ function fillHop(li) {
       el('span', {}, `${MODE_LABEL[plan.est.mode]}約 ${fmtMin(min)}(${fmtKm(km)}${delay})· ${tag}`),
       arrive ? el('span', {}, `${leave} 出發 → 約 ${arrive} 抵達`) : null,
       el('a', { href: directionsUrl(a, b, plan.est.mode), target: '_blank', rel: 'noopener' }, '怎麼去 ›')),
-    plan.est.mode === 'transit' && plan.est.km > 1.2 ? rideEl(a, b) : null,
+    ...(plan.est.mode === 'transit' && plan.est.km > 1.2 ? [rideEl(a, b)] : []).filter(Boolean), // 不能直接傳 null:replaceChildren 會把它變成文字「null」
     el('div', { class: 'tchips', role: 'group', 'aria-label': '改交通方式' }, ...chips));
 }
 
