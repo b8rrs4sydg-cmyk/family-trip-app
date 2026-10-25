@@ -189,6 +189,13 @@
   .link.quiet { background: transparent; color: var(--muted); padding: 0 6px; font-weight: 600; cursor: default; }
   .hop .rail::before { opacity: .3; }
   .hop-in { padding: 0 0 6px; font-size: 15px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
+  .hop-in { flex-direction: column; align-items: stretch; gap: 8px; }
+  .hop-top { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
+  .mchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mchip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .mchip small { font-size: 12px; color: var(--primary); font-weight: 700; }
+  .mchip.on { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+  .mchip.on small { color: var(--primary-ink); opacity: .9; }
   .hop-in a { color: var(--primary); font-weight: 700; text-decoration: none; }
   .hop-in a:hover { text-decoration: underline; }
   .grip { cursor: grab; touch-action: none; }
@@ -453,7 +460,7 @@
 
 <script type="module">
 import { PHRASES } from '/phrases.js';
-import { dayColor, hasCoord, estimateTravel, fmtKm, fmtMin, directionsUrl, money, dayDateLabel, tripText, isoDate, departureISO, flightSearchUrl, hotelSearchUrl } from '/geo.js';
+import { dayColor, hasCoord, estimateTravel, recommendMode, roadKm, fmtKm, fmtMin, directionsUrl, money, dayDateLabel, tripText, isoDate, departureISO, flightSearchUrl, hotelSearchUrl } from '/geo.js';
 import { queryFromTitle, nominatimUrl, photonUrl, parseNominatim, parsePhoton } from '/geocoding.js';
 
 const $ = (id) => document.getElementById(id);
@@ -496,6 +503,9 @@ const ICONS = {
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   home: '<path d="M3 11l9-8 9 8M5 10v10h14V10"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="M9 21l2-6-2-2 1-5 3-1 2 4h3M11 15l3 2v4M10 8l-3 2"/>',
+  train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l2-4M15 21l-2-4"/><circle cx="9" cy="14" r=".6"/><circle cx="15" cy="14" r=".6"/>',
+  car: '<path d="M4 16v-4l2-5h12l2 5v4M4 16h16M4 16v2h3v-2M17 16v2h3v-2"/><circle cx="8" cy="13" r=".6"/><circle cx="16" cy="13" r=".6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   tag: '<path d="M3 12V3h9l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.3"/>',
 };
@@ -622,8 +632,8 @@ const getMode = () => store.get('mode', 'auto');
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 // 這一段要怎麼查:今天 → 即時;未來 90 天內 → 依預定時間預測;其他(沒填日期、已過去、太遠)→ 只用免費的道路路網
-function hopPlan(a, b, day) {
-  const est = estimateTravel(a, b, getMode());
+function hopPlan(a, b, day, mode = a.travel || getMode()) {
+  const est = estimateTravel(a, b, mode);
   const date = isoDate(trip.start_date, day);
   const today = todayStr();
   let depart = null, live = false, osmOnly = true;
@@ -636,7 +646,9 @@ function hopPlan(a, b, day) {
 }
 
 const MODE_LABEL = { walk: '步行', transit: '大眾運輸', drive: '開車' };
+const MODE_ICON = { walk: 'walk', transit: 'train', drive: 'car' };
 
+// 這一段實際用的交通方式:這一站自己設的 > 這支手機的偏好 > 依距離建議
 function fillHop(li) {
   const { a, b, day } = li._hop;
   const plan = hopPlan(a, b, day);
@@ -648,10 +660,32 @@ function fillHop(li) {
   if (r?.source === 'google') tag = r.predicted ? `依 ${plan.date.slice(5).replace('-', '/')} ${a.time || '09:00'} 出發預測` : '即時路況';
   else if (r?.source === 'osrm') tag = '依道路計算,無路況';
   const delay = r?.delayMin >= 3 ? `,塞車多 ${r.delayMin} 分` : '';
+  const suggested = recommendMode(roadKm(a, b));
+  // 超過 6 公里就不提供步行(除非原本就選了步行)
+  const chips = ['walk', 'transit', 'drive'].filter((m) => m !== 'walk' || roadKm(a, b) <= 6 || plan.est.mode === 'walk').map((m) => {
+    const p = hopPlan(a, b, day, m);
+    const h = routeCache.get(p.key);
+    const real = h && h.data.source !== 'none' ? h.data : null;
+    const on = m === plan.est.mode;
+    return el('button', {
+      type: 'button', class: `mchip${on ? ' on' : ''}`, 'aria-pressed': String(on),
+      'aria-label': `${MODE_LABEL[m]}約 ${fmtMin(real ? real.min : p.est.min)}${m === suggested ? ',建議' : ''}`,
+      onclick: () => setTravel(a, m),
+    }, icon(MODE_ICON[m], 16), el('span', {}, `${MODE_LABEL[m]} ${real ? '' : '約 '}${fmtMin(real ? real.min : p.est.min)}`), m === suggested ? el('small', {}, '建議') : null);
+  });
   li.querySelector('.hop-in').replaceChildren(
-    icon('clock', 16),
-    el('span', {}, `${MODE_LABEL[plan.est.mode]}約 ${fmtMin(min)}(${fmtKm(km)}${delay})· ${tag}`),
-    el('a', { href: directionsUrl(a, b, plan.est.mode), target: '_blank', rel: 'noopener' }, '怎麼去 ›'));
+    el('div', { class: 'hop-top' }, icon('clock', 16),
+      el('span', {}, `${MODE_LABEL[plan.est.mode]}約 ${fmtMin(min)}(${fmtKm(km)}${delay})· ${tag}`),
+      el('a', { href: directionsUrl(a, b, plan.est.mode), target: '_blank', rel: 'noopener' }, '怎麼去 ›')),
+    el('div', { class: 'mchips', role: 'group', 'aria-label': '改交通方式' }, ...chips));
+}
+
+// 換交通方式:存在這一站上(大家共用),立刻重畫並查這個方式的路線
+async function setTravel(a, mode) {
+  a.travel = mode;
+  document.querySelectorAll('.hop').forEach(fillHop);
+  maybeRoutes();
+  try { await api('PATCH', `/${tripId}/items/${a.id}`, { travel: mode }); } catch (e) { toast(e.message, true); }
 }
 
 function hopRow(a, b, day) {

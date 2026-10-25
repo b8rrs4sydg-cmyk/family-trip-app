@@ -15,14 +15,19 @@ export function haversineKm(a, b) {
 }
 
 // 沒有路網資料時的「估算」:直線距離乘 1.3 當路程。
-// auto:1.2 公里內視為步行(每分鐘 75 公尺),再遠視為大眾運輸(時速約 28 公里,另加 8 分鐘等候);
-// 也可以指定 walk / transit / drive(開車時速約 35 公里,另加 3 分鐘上下車)。
+// 步行每分鐘 75 公尺;開車時速約 35 公里(長途上高速約 70)另加 3 分鐘上下車;
+// 大眾運輸:市區時速約 25 公里加 8 分鐘等候,超過 10 公里的部分算特急/高速列車時速約 60 公里。
+export const RECOMMEND_WALK_KM = 1.2;
+export const roadKm = (a, b) => haversineKm(a, b) * 1.3;
+// 建議的交通方式:1.2 公里內走路,再遠搭大眾運輸(日本市區與機場往返都以電車為主)
+export const recommendMode = (road) => (road <= RECOMMEND_WALK_KM ? 'walk' : 'transit');
+
 export function estimateTravel(a, b, mode = 'auto') {
-  const road = haversineKm(a, b) * 1.3;
-  const m = mode === 'auto' ? (road <= 1.2 ? 'walk' : 'transit') : mode;
+  const road = roadKm(a, b);
+  const m = mode === 'auto' ? recommendMode(road) : mode;
   const min = m === 'walk' ? Math.max(1, Math.round((road * 1000) / 75))
-    : m === 'drive' ? Math.round(3 + (road / 35) * 60)
-    : Math.round(8 + (road / 28) * 60);
+    : m === 'drive' ? Math.round(3 + (Math.min(road, 15) / 35 + Math.max(0, road - 15) / 70) * 60)
+    : Math.round(8 + (Math.min(road, 10) / 25 + Math.max(0, road - 10) / 60) * 60);
   return { mode: m, km: road, min };
 }
 
