@@ -1,6 +1,7 @@
 import { importPlace, extractUrl, splitAddress } from './maps.js';
 import { planTrip } from './plan.js';
 import { ensureSchema } from './schema.js';
+import { parseFlightInput, flightItem } from './flights.js';
 import { insertIndex, mergeFixed, insertNearest, spreadHeavy, placeMeals } from './schedule.js';
 import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from './nl.js';
 import { geocode } from './geocode.js';
@@ -96,6 +97,18 @@ async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0, hint = nu
     const day = explicit || defaultDay;
     const e = { ...place, day, time: t?.time ?? null, kind: 'place', fixed: explicit > 0, who };
     return [{ id: await insertItem(env, tripId, nDays, e), name: place.name, day, time: e.time }];
+  }
+
+  // 航班號(例如「IT202 1/15 14:25-18:35」):辨識航空公司與起訖,起飛時間排進當天,飛行時間自動算好
+  const trip = await env.DB.prepare('SELECT start_date FROM trips WHERE id = ?').bind(tripId).first();
+  const fl = parseFlightInput(text, { startDate: trip?.start_date, nDays });
+  if (fl) {
+    const it = flightItem(fl, { nDays });
+    const day = it.day || defaultDay;
+    const dup = await env.DB.prepare('SELECT id FROM items WHERE trip_id = ? AND day = ? AND name = ?').bind(tripId, day, it.name).first();
+    if (dup) return [{ id: dup.id, name: it.name, day, time: it.time, duplicate: true }];
+    const id = await insertItem(env, tripId, nDays, { ...it, day, fixed: it.day > 0, who });
+    return [{ id, name: it.name, day, time: it.time, flight: true, needTime: !it.time, needRoute: !fl.from || !fl.to }];
   }
 
   if (!hasScheduleCue(text) && text.length <= 30) {
