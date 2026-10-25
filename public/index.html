@@ -416,6 +416,8 @@
           <button class="example" type="button">每天不要排太滿</button>
         </div>
         <p style="margin-top:10px"><button class="btn accent block" id="planGo"><i data-i="sparkles"></i>開始排</button></p>
+        <p class="hint">預設只會把「還沒安排」的地點放進最順路的一天,不會動你已經排好的。有想法(例如「第三天想逛街」)時,才會依你的想法調整。</p>
+        <p style="margin-top:6px"><button class="btn block" type="button" id="planAll">連已排好的一起重排整個行程</button></p>
       </section>
       <section class="card sugpanel hidden" id="sugPanel">
         <div class="row">
@@ -1279,7 +1281,7 @@ function pvLoad(res) {
     pv.entries.set(key, e);
     return key;
   }));
-  pv.tips = res.tips || [];
+  pv.tips = res.tips || []; pv.keepTips = !!res.keepTips; pv.scope = res.scope; pv.newCount = res.newCount;
   for (const x of res.stays || []) pv.stays.set(x.id, x.minutes);
   pv.usedAi = res.usedAi;
 }
@@ -1337,11 +1339,12 @@ function renderPv() {
   // 摘要
   let moved = 0, added = 0, hotelCopies = 0;
   pv.days.forEach((keys, i) => keys.forEach((k) => { const inf = pvInfo(k); if (inf.isNew) added++; else if (inf.tmp) hotelCopies++; else if (inf.orig !== i + 1) moved++; }));
-  $('pvSummary').textContent = [pv.usedAi ? '' : 'AI 暫時沒回應,先用距離排的建議。', `和目前相比:${moved} 個項目換到不同天`, added ? `${added} 個新增` : null, hotelCopies ? `${hotelCopies} 個住宿出發/回住宿` : null].filter(Boolean).join(' · ') + '。滿意再按「套用」。';
+  const modeNote = pv.scope === 'new' ? (pv.newCount ? `只把 ${pv.newCount} 個還沒安排的地點放進最順路的一天,你原本排好的都沒動` : '沒有還沒安排的地點,你原本排好的都沒動') : pv.scope === 'all' ? '已重新排整個行程' : '';
+  $('pvSummary').textContent = [pv.usedAi ? '' : 'AI 暫時沒回應,先用距離排的建議。', modeNote, moved ? `${moved} 個項目換到不同天` : null, added ? `${added} 個新增` : null, hotelCopies ? `${hotelCopies} 個住宿出發/回住宿` : null].filter(Boolean).join(' · ') + '。滿意再按「套用」。';
   $('pv').dataset.tab = pv.tab; $('pvTabNew').setAttribute('aria-selected', String(pv.tab === 'new')); $('pvTabNow').setAttribute('aria-selected', String(pv.tab === 'now'));
 }
 
-async function pvRequest(instruction, withDraft) {
+async function pvRequest(instruction, withDraft, scope) {
   if (pv.busy) return false;
   pv.busy = true;
   ['pvApply', 'pvRefine'].forEach((id) => { $(id).disabled = true; });
@@ -1350,7 +1353,7 @@ async function pvRequest(instruction, withDraft) {
   if (!withDraft) $('pvNew').replaceChildren(el('div', { class: 'pv-loading' }, 'AI 正在排…'));
   else $('pvNew').style.opacity = '.5';
   try {
-    const body = { instruction };
+    const body = { instruction, scope };
     if (withDraft) {
       body.draft = pv.days.map((keys) => keys.map((k) => pv.entries.get(k)).filter((e) => e.id).map((e) => e.id));
       body.draftAdds = pv.days.flatMap((keys, i) => keys.map((k) => pv.entries.get(k)).filter((e) => e.add).map((e) => ({ name: e.add.name, kind: e.add.kind, day: i + 1 })));
@@ -1365,13 +1368,13 @@ async function pvRequest(instruction, withDraft) {
   finally { pv.busy = false; $('pvNew').style.opacity = ''; ['pvApply', 'pvRefine'].forEach((id) => { $(id).disabled = false; }); $('pvRefine').innerHTML = wasHtml; hydrateIcons($('pvRefine')); }
 }
 
-async function openPreview(instruction) {
+async function openPreview(instruction, scope) {
   if (!trip.items.length) { toast('請先加入一些地點', true); return; }
   pv.stays = new Map(); pv.tab = 'new'; pv.days = Array.from({ length: trip.days }, () => []);
   $('pvText').value = '';
   renderPv();
   $('pv').showModal();
-  if (!(await pvRequest(instruction, false))) $('pv').close();
+  if (!(await pvRequest(instruction, false, scope))) $('pv').close();
 }
 
 function setupPreview() {
@@ -1393,7 +1396,7 @@ function setupPreview() {
     try {
       const r = await api('POST', `/${tripId}/plan/apply`, {
         days: pv.days.map((keys) => keys.map((k) => pv.entries.get(k))),
-        tips: pv.tips,
+        tips: pv.keepTips ? null : pv.tips,
         stays: [...pv.stays].map(([id, minutes]) => ({ id, minutes })),
       });
       $('pv').close();
@@ -1882,6 +1885,7 @@ function showTrip() {
     if (!$('planPanel').classList.contains('hidden')) $('planText').focus();
   };
   $('planPanel').querySelectorAll('.example').forEach((x) => { x.onclick = () => { $('planText').value = x.textContent; $('planText').focus(); }; });
+  $('planAll').onclick = () => { const text = $('planText').value.trim(); $('planPanel').classList.add('hidden'); $('planText').value = ''; openPreview(text, 'all'); };
   $('planGo').onclick = () => { const text = $('planText').value.trim(); $('planPanel').classList.add('hidden'); $('planText').value = ''; openPreview(text); };
 
   refresh(true);

@@ -77,3 +77,20 @@ test('normalizePlan: 驗證 AI 的停留時間與新增地點', () => {
   assert.deepEqual(r.stays, [{ id: 'a', minutes: 120 }]);
   assert.deepEqual(r.adds.map((x) => [x.name, x.day, x.kind]), [['澀谷 109', 3, 'place'], ['表參道', 3, 'place']]);
 });
+
+test('insertNearest: 新地點放進最順路的一天,不動原本的順序', async () => {
+  const { insertNearest } = await import('../src/schedule.js');
+  const asakusa = { id: 'a', lat: 35.7148, lng: 139.7967 }, ueno = { id: 'u', lat: 35.7156, lng: 139.7745 };
+  const tower = { id: 't', lat: 35.6586, lng: 139.7454 }, shibuya = { id: 's', lat: 35.658, lng: 139.7016 };
+  const days = [[asakusa, ueno], [tower]];
+  const before = days.map((d) => d.map((x) => x.id).join());
+  insertNearest(days, { id: 'sk', lat: 35.7101, lng: 139.8107 }); // 晴空塔:在淺草一帶
+  assert.ok(days[0].some((x) => x.id === 'sk'));
+  assert.deepEqual(days[0].filter((x) => x.id !== 'sk').map((x) => x.id), ['a', 'u']); // 原有順序不變
+  assert.equal(days[1].length, 1);
+  insertNearest(days, shibuya); // 澀谷:靠近東京鐵塔那天
+  assert.ok(days[1].some((x) => x.id === 's'));
+  assert.equal(before[1], 't');
+  insertNearest(days, { id: 'x', name: '沒座標' });
+  assert.ok(days.flat().some((x) => x.id === 'x'));
+});
