@@ -106,13 +106,14 @@
   /* ---------- 版面:手機一次顯示一個(行程/地圖),電腦並排 ---------- */
   .mappane { display: none; position: relative; margin-top: 10px; height: calc(100dvh - var(--topbar) - 84px - env(safe-area-inset-bottom)); border-radius: var(--r); overflow: hidden;
     box-shadow: var(--shadow-sm); background: var(--surface); }
-  #map { position: absolute; inset: 0; }
-  .mapbar { position: absolute; z-index: 2; top: 10px; left: 10px; right: 62px; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; pointer-events: none; }
+  #map { position: absolute; inset: 44px 0 0 0; }
+  .mapbar { position: absolute; z-index: 3; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 10px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; background: var(--surface); border-bottom: .5px solid var(--line); touch-action: pan-x; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
   .mapbar::-webkit-scrollbar { display: none; }
-  .mchip { pointer-events: auto; flex: 0 0 auto; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--surface); color: var(--ink); font-weight: 600; font-size: 13px; cursor: pointer; box-shadow: var(--shadow-sm), 0 2px 8px rgba(0, 0, 0, .1); }
+  .mchip { flex: 0 0 auto; min-height: 30px; touch-action: manipulation; padding: 0 12px; border-radius: 999px; border: 0; background: var(--surface); color: var(--ink); font-weight: 600; font-size: 13px; cursor: pointer; box-shadow: var(--shadow-sm), 0 2px 8px rgba(0, 0, 0, .1); }
+  .mchip { background: var(--fill); box-shadow: none; }
   .mchip[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
   .mapmsg { position: absolute; z-index: 2; left: 12px; right: 12px; bottom: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); font-size: 14px; color: var(--muted); text-align: center; }
-  .pickbar { position: absolute; z-index: 3; left: 10px; right: 10px; top: 50px; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 12px;
+  .pickbar { position: absolute; z-index: 3; left: 10px; right: 10px; top: 54px; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 12px;
     background: var(--ink); color: var(--bg); box-shadow: var(--shadow); font-weight: 600; font-size: 14px; }
   .pickbar span { flex: 1; min-width: 0; }
   .pickbar b { display: inline-block; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
@@ -206,8 +207,9 @@
   footer { margin-top: 32px; text-align: center; color: var(--muted); font-size: 12px; }
 
   /* ---------- 地圖標記 ---------- */
-  .pin { animation: pinpop .35s var(--ease) both; width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid #fff; background: var(--c, #2563eb); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; padding: 0; }
+  .pin { animation: pinpop .35s var(--ease) both; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 14px; border: 2.5px solid #fff; background: var(--c, #2563eb); color: #fff; font-weight: 700; font-size: 12px; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; white-space: nowrap; }
   .maplibregl-popup-content { font: 14px/1.45 -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; border-radius: 12px; padding: 10px 12px; color: #1d1d1f; min-width: 170px; }
+  .pop-item + .pop-item { margin-top: 10px; padding-top: 10px; border-top: .5px solid rgba(0, 0, 0, .12); }
   .pop-name { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
   .pop-sub { color: #6e6e73; font-size: 13px; }
   .pop-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
@@ -1498,17 +1500,21 @@ function drawMap(fit) {
   popup?.remove();
 
   const byDay = new Map();
-  // 位置幾乎相同的地點(例如同一座寺廟的好幾個項目)會疊在一起,用像素位移把它們散開成一圈
-  const stack = new Map();
-  for (const { it } of located) { const k = `${it.lat.toFixed(4)},${it.lng.toFixed(4)}`; stack.set(k, (stack.get(k) || 0) + 1); }
-  const seen = new Map();
+  // 同一天、位置相同的項目(例如同一座寺廟的好幾個項目、每天出發與回來的住宿)合併成一個標記,
+  // 標記上寫出它們在行程中的各個編號(例如「1·4」);標線仍然依行程順序連過每一個項目,圖標與標線不會錯開。
+  const groups_ = new Map();
   for (const { it, day, n } of located) {
-    const pin = el('button', { class: 'pin', style: `--c:${dayColor(day)}`, 'aria-label': `第 ${day} 天 ${n} ${it.name}` }, String(n));
-    pin.addEventListener('click', (e) => { e.stopPropagation(); if (!pick) openPopup(it, day); });
-    const k = `${it.lat.toFixed(4)},${it.lng.toFixed(4)}`, total = stack.get(k), idx = seen.get(k) || 0; seen.set(k, idx + 1);
-    const ang = (idx / total) * Math.PI * 2 - Math.PI / 2, r = total > 1 ? 13 : 0;
-    markers.push(new maplibregl.Marker({ element: pin, offset: [Math.cos(ang) * r, Math.sin(ang) * r] }).setLngLat([it.lng, it.lat]).addTo(map));
+    const k = `${day}|${it.lat.toFixed(4)},${it.lng.toFixed(4)}`;
+    if (!groups_.has(k)) groups_.set(k, { day, it, items: [] });
+    groups_.get(k).items.push({ it, n });
     if (day > 0) { if (!byDay.has(day)) byDay.set(day, []); byDay.get(day).push([it.lng, it.lat]); }
+  }
+  for (const g of groups_.values()) {
+    const nums = g.items.map((x) => x.n);
+    const label = nums.length > 3 ? `${nums.slice(0, 2).join('·')}…` : nums.join('·');
+    const pin = el('button', { class: 'pin', style: `--c:${dayColor(g.day)}`, 'aria-label': `第 ${g.day} 天 ${nums.join('、')} ${g.items.map((x) => x.it.name).join('、')}` }, String(label));
+    pin.addEventListener('click', (e) => { e.stopPropagation(); if (!pick) openPopup(g.items[0].it, g.day, g.items.map((x) => x.it)); });
+    markers.push(new maplibregl.Marker({ element: pin }).setLngLat([g.it.lng, g.it.lat]).addTo(map));
   }
   map.getSource('routes')?.setData({
     type: 'FeatureCollection',
@@ -1522,20 +1528,25 @@ function drawMap(fit) {
     else {
       const b = new maplibregl.LngLatBounds();
       located.forEach(({ it }) => b.extend([it.lng, it.lat]));
-      map.fitBounds(b, { padding: { top: 90, bottom: 56, left: 48, right: 60 }, maxZoom: 15, duration: 600 });
+      map.fitBounds(b, { padding: { top: 48, bottom: 56, left: 48, right: 56 }, maxZoom: 15, duration: 600 });
     }
   }
 }
 
-function openPopup(it, day) {
+function openPopup(it, day, group) {
   popup?.remove();
-  const nav = navUrl(it);
-  const sub = [day > 0 ? `第 ${day} 天` : '還沒安排', it.time, it.cost ? money(it.cost) : null].filter(Boolean).join(' · ');
-  const node = el('div', {},
-    el('div', { class: 'pop-name' }, it.name), el('div', { class: 'pop-sub' }, sub),
-    el('div', { class: 'pop-acts' },
-      nav ? el('a', { class: 'go', href: nav, target: '_blank', rel: 'noopener' }, '導航') : null,
-      el('button', { type: 'button', onclick: () => { popup?.remove(); showInList(it); } }, '在行程中看')));
+  const sub = (x) => [day > 0 ? `第 ${day} 天` : '還沒安排', x.time, x.cost ? money(x.cost) : null].filter(Boolean).join(' · ');
+  const one = (x) => {
+    const nav = navUrl(x);
+    return el('div', { class: 'pop-item' },
+      el('div', { class: 'pop-name' }, x.name), el('div', { class: 'pop-sub' }, sub(x)),
+      el('div', { class: 'pop-acts' },
+        nav ? el('a', { class: 'go', href: nav, target: '_blank', rel: 'noopener' }, '導航') : null,
+        el('button', { type: 'button', onclick: () => { popup?.remove(); showInList(x); } }, '在行程中看')));
+  };
+  // 同一個位置有好幾個項目時,依行程順序全部列出來
+  const items = group && group.length > 1 ? group : [it];
+  const node = el('div', {}, ...items.map(one));
   popup = new maplibregl.Popup({ offset: 22, closeButton: false, maxWidth: '280px' }).setLngLat([it.lng, it.lat]).setDOMContent(node).addTo(map);
 }
 
