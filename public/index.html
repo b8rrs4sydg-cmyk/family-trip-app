@@ -359,6 +359,14 @@
     <p style="margin-top:18px"><button class="btn primary block" id="createBtn">開始規劃</button></p>
     <p class="hint">名稱寫上目的地,AI 推薦景點會更準。</p>
   </section>
+  <section class="card" style="margin-top:12px">
+    <label class="f" for="joinCode" style="margin-top:0">旅伴給你短碼了嗎?</label>
+    <div class="row" style="flex-wrap:nowrap">
+      <input class="field" id="joinCode" placeholder="例如 ABCD-EFGH" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" style="flex:1;letter-spacing:.1em;text-transform:uppercase">
+      <button class="btn primary" id="joinBtn" style="flex:none">加入行程</button>
+    </div>
+    <p class="hint">輸入別人分享的短碼(或貼上行程連結),就能一起編輯同一份行程。</p>
+  </section>
   <section id="recentBox" class="hidden">
     <h2 class="section-title">最近的行程</h2>
     <div class="recent" id="recent"></div>
@@ -374,6 +382,7 @@
       <div class="desk">
         <button class="tbtn" data-act="translate"><i data-i="translate"></i>翻譯</button>
         <button class="tbtn" data-act="share"><i data-i="share"></i>分享</button>
+        <button class="tbtn" data-act="code"><i data-i="tag"></i>短碼</button>
         <button class="tbtn" data-act="copy"><i data-i="copy"></i>複製行程</button>
         <button class="tbtn" data-act="settings"><i data-i="settings"></i>設定</button>
       </div>
@@ -494,6 +503,7 @@
     <h3 id="moreTitle">更多</h3>
     <div class="menu">
       <button type="button" data-act="share"><i data-i="share" data-s="20"></i>分享行程</button>
+      <button type="button" data-act="code"><i data-i="tag" data-s="20"></i>複製分享短碼(讓旅伴在首頁輸入)</button>
       <button type="button" data-act="copy"><i data-i="copy" data-s="20"></i>複製行程文字(貼到 LINE)</button>
       <button type="button" data-act="settings"><i data-i="settings" data-s="20"></i>旅行設定(名稱、天數、日期)</button>
       <a class="btn" href="/" style="justify-content:flex-start;min-height:46px;border-radius:12px;gap:12px;padding:0 14px"><i data-i="home" data-s="20"></i>回首頁 / 其他行程</a>
@@ -716,6 +726,22 @@ function showHome() {
     for (const r of recent) $('recent').append(el('a', { href: `/?t=${encodeURIComponent(r.id)}` },
       el('span', { class: 'cover' }, icon('map', 20)), el('span', {}, r.name), el('span', { class: 'go' }, icon('go', 18))));
   }
+  // 用短碼(或貼上行程連結)加入行程
+  const join = async () => {
+    const raw = $('joinCode').value.trim();
+    const link = /[?&]t=([a-z0-9]{12})\b/i.exec(raw);
+    if (link) { location.href = `/?t=${link[1]}`; return; }
+    if (!raw) { toast('請先輸入短碼', true); $('joinCode').focus(); return; }
+    $('joinBtn').disabled = true;
+    try {
+      const res = await fetch('/api/join', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: raw }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '加入失敗,請再試一次');
+      location.href = `/?t=${data.id}`;
+    } catch (e) { toast(e.message, true); $('joinBtn').disabled = false; }
+  };
+  $('joinBtn').onclick = join;
+  $('joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); join(); } });
   $('createBtn').onclick = async () => {
     $('createBtn').disabled = true;
     try {
@@ -1721,6 +1747,14 @@ const actions = {
     try { if (navigator.share) { await navigator.share({ title: trip.name, text: '一起來排旅行', url: link }); return; } } catch { return; }
     try { await navigator.clipboard.writeText(link); toast('連結已複製,可以貼到 LINE 分享給旅伴'); }
     catch { prompt('請複製這個連結分享給旅伴:', link); }
+  },
+  async code() {
+    $('more').close();
+    let code;
+    try { code = (await api('POST', `/${tripId}/code`)).code; } catch (e) { toast(e.message, true); return; }
+    const text = `旅途規劃「${trip.name}」\n短碼:${code}\n到首頁輸入短碼就能一起編輯`;
+    try { await navigator.clipboard.writeText(text); toast(`已複製短碼 ${code}\n請旅伴到首頁的「加入行程」輸入`); }
+    catch { prompt(`短碼是 ${code},請複製:`, text); }
   },
   async copy() {
     $('more').close();
