@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>家人旅行規劃</title>
+<title>旅途規劃</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css"
   integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"
@@ -264,9 +264,9 @@
 <!-- ============ 首頁 ============ -->
 <div id="home" class="wrap hidden">
   <header class="hero">
-    <div class="eyebrow">FAMILY TRIP</div>
-    <h1>和家人一起<br>排好下一趟旅行</h1>
-    <p>貼上地圖連結,或直接用說的。<br>AI 幫你排每一天,地圖上一目了然。</p>
+    <div class="eyebrow">TRIP PLANNER</div>
+    <h1>旅途規劃</h1>
+    <p>貼上地圖連結,或直接說出想法。<br>AI 幫你排好每一天,路線與時間一目了然。</p>
     <svg class="art" width="120" height="96" viewBox="0 0 120 96" fill="none" aria-hidden="true">
       <path d="M8 84c20-6 28-30 48-30s26 22 56 6" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 9" opacity=".8"/>
       <path d="M78 10c-13 0-23 10-23 22 0 17 23 36 23 36s23-19 23-36c0-12-10-22-23-22z" fill="#fff"/>
@@ -299,7 +299,7 @@
         <button class="tbtn" data-act="copy"><i data-i="copy"></i>複製行程</button>
         <button class="tbtn" data-act="settings"><i data-i="settings"></i>設定</button>
       </div>
-      <button class="icon-btn mob" data-act="share" aria-label="分享給家人" title="分享給家人"><i data-i="share" data-s="20"></i></button>
+      <button class="icon-btn mob" data-act="share" aria-label="分享行程" title="分享行程"><i data-i="share" data-s="20"></i></button>
     </header>
     <nav class="daynav-wrap"><div class="daynav" id="daynav" aria-label="跳到某一天"></div></nav>
   </div>
@@ -350,7 +350,7 @@
 
       <main id="days"></main>
 
-      <footer>知道這個網址的人都能一起編輯,請只傳給家人。<br>地圖資料 © OpenStreetMap 貢獻者 · 每個移動時間後面會標示來源(即時、預測、依道路計算或估算)。</footer>
+      <footer>知道這個網址的人都能一起編輯,請只分享給旅伴。<br>地圖資料 © OpenStreetMap 貢獻者 · 每個移動時間後面會標示來源(即時、預測、依道路計算或估算)。</footer>
     </div>
 
     <aside class="mappane" id="mappane" aria-label="地圖">
@@ -401,7 +401,7 @@
     <div class="grab" aria-hidden="true"></div>
     <h3 id="moreTitle">更多</h3>
     <div class="menu">
-      <button type="button" data-act="share"><i data-i="share" data-s="20"></i>分享給家人</button>
+      <button type="button" data-act="share"><i data-i="share" data-s="20"></i>分享行程</button>
       <button type="button" data-act="copy"><i data-i="copy" data-s="20"></i>複製行程文字(貼到 LINE)</button>
       <button type="button" data-act="settings"><i data-i="settings" data-s="20"></i>旅行設定(名稱、天數、日期)</button>
       <a class="btn" href="/" style="justify-content:flex-start;min-height:46px;border-radius:12px;gap:12px;padding:0 14px"><i data-i="home" data-s="20"></i>回首頁 / 其他行程</a>
@@ -645,7 +645,12 @@ const getMode = () => store.get('mode', 'auto');
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 // 這一段要怎麼查:今天 → 即時;未來 90 天內 → 依預定時間預測;其他(沒填日期、已過去、太遠)→ 只用免費的道路路網
-function hopPlan(a, b, day, mode = a.travel || getMode()) {
+// 沒有指定交通方式時:近的走路,遠的搭大眾運輸;但查不到合適的大眾運輸搭法時改建議開車
+const suggestedMode = (a, b) => {
+  const m = recommendMode(roadKm(a, b));
+  return m === 'transit' && rides.get(rideKey(a, b)) === 'none' ? 'drive' : m;
+};
+function hopPlan(a, b, day, mode = a.travel || (getMode() === 'auto' ? suggestedMode(a, b) : getMode())) {
   const est = estimateTravel(a, b, mode);
   const date = isoDate(trip.start_date, day);
   const today = todayStr();
@@ -675,7 +680,7 @@ function fillHop(li) {
   const delay = r?.delayMin >= 3 ? `,塞車多 ${r.delayMin} 分` : '';
   const leave = a.time && a.stay ? addMinutes(a.time, a.stay) : null;
   const arrive = leave ? addMinutes(leave, min) : null;
-  const suggested = recommendMode(roadKm(a, b));
+  const suggested = suggestedMode(a, b);
   // 超過 6 公里就不提供步行(除非原本就選了步行)
   const chips = ['walk', 'transit', 'drive'].filter((m) => m !== 'walk' || roadKm(a, b) <= 6 || plan.est.mode === 'walk').map((m) => {
     const p = hopPlan(a, b, day, m);
@@ -707,27 +712,26 @@ async function setTravel(a, mode) {
 
 // ---------- 大眾運輸怎麼搭(車站與路線,AI 依地圖資料整理) ----------
 const rideKey = (a, b) => [a.lat, a.lng, b.lat, b.lng].map((n) => n.toFixed(3)).join(',');
-const rides = new Map(Object.entries(store.get('rides', {}))); // key -> { summary, steps } | 'fail'
+const rides = new Map(Object.entries(store.get('rides2', {}))); // key -> { summary, steps } | 'fail'
 const rideQueue = []; const rideBusy = new Set();
 function rideEl(a, b) {
   const r = rides.get(rideKey(a, b));
-  if (r && r !== 'fail') {
-    return el('div', { class: 'ride' }, el('b', {}, r.summary || '建議用導航查大眾運輸'),
-      r.steps?.length ? el('div', {}, r.steps.map((x, i) => `${i + 1}. ${x}`).join('\n')) : null,
-      el('small', {}, r.grounded === false ? 'AI 的建議(沒查到附近車站資料),請務必用導航確認' : 'AI 依地圖上的車站與路線整理,實際請以導航為準'));
-  }
-  return el('div', { class: 'ride' }, r === 'fail' ? '搭法暫時查不到,請按「怎麼去」看導航' : '正在查要搭什麼車…');
+  if (r === 'none' || r === 'fail') return null; // 沒有合適的搭法:不顯示
+  if (!r) return el('div', { class: 'ride' }, '正在查要搭什麼車…');
+  return el('div', { class: 'ride' }, el('b', {}, r.summary),
+    el('div', {}, r.steps.map((x, i) => `${i + 1}. ${x}`).join('\n')),
+    el('small', {}, r.grounded === false ? 'AI 的建議(沒查到附近車站資料),請務必用導航確認' : 'AI 依地圖上的車站與路線整理,實際請以導航為準'));
 }
 function pumpRides() {
   while (rideBusy.size < 2 && rideQueue.length) {
     const j = rideQueue.shift(); const k = rideKey(j.a, j.b); rideBusy.add(k);
     api('POST', `/${tripId}/transit`, { from: { lat: j.a.lat, lng: j.a.lng, name: j.a.name }, to: { lat: j.b.lat, lng: j.b.lng, name: j.b.name } })
-      .then((r) => rides.set(k, { summary: r.summary, steps: r.steps, grounded: r.grounded }))
+      .then((r) => rides.set(k, r.available && r.steps?.length ? { summary: r.summary, steps: r.steps, grounded: r.grounded } : 'none'))
       .catch(() => rides.set(k, 'fail'))
       .finally(() => {
         rideBusy.delete(k);
-        const ok = {}; rides.forEach((v, key) => { if (v !== 'fail') ok[key] = v; });
-        store.set('rides', Object.fromEntries(Object.entries(ok).slice(-80)));
+        const ok = {}; rides.forEach((v, key) => { if (v !== 'fail' && v !== 'none') ok[key] = v; });
+        store.set('rides2', Object.fromEntries(Object.entries(ok).slice(-80)));
         document.querySelectorAll('.hop').forEach(fillHop);
         pumpRides();
       });
@@ -839,7 +843,7 @@ function dateRange() {
 
 function render() {
   $('tripName').textContent = trip.name;
-  document.title = trip.name + ' - 家人旅行規劃';
+  document.title = trip.name + ' - 旅途規劃';
   const total = trip.items.reduce((s, i) => s + (i.cost || 0), 0);
   $('tripMeta').textContent = [dateRange(), `${trip.days} 天`, `${trip.items.length} 個項目`, total ? `預估 ${money(total)}` : null].filter(Boolean).join(' · ');
 
@@ -1245,8 +1249,8 @@ const actions = {
     $('more').close();
     const link = location.href;
     try { if (navigator.share) { await navigator.share({ title: trip.name, text: '一起來排旅行', url: link }); return; } } catch { return; }
-    try { await navigator.clipboard.writeText(link); toast('連結已複製,可以貼到 LINE 給家人'); }
-    catch { prompt('請複製這個連結傳給家人:', link); }
+    try { await navigator.clipboard.writeText(link); toast('連結已複製,可以貼到 LINE 分享給旅伴'); }
+    catch { prompt('請複製這個連結分享給旅伴:', link); }
   },
   async copy() {
     $('more').close();

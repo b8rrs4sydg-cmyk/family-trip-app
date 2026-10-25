@@ -1,7 +1,7 @@
 {
-  "name": "家人旅行規劃",
-  "short_name": "旅行",
-  "description": "把地點排成每天的行程,地圖、翻譯、家人一起編輯",
+  "name": "旅途規劃",
+  "short_name": "旅途規劃",
+  "description": "把地點排成每天的行程,地圖、翻譯、多人一起編輯",
   "lang": "zh-Hant",
   "start_url": "/",
   "scope": "/",

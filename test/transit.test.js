@@ -30,3 +30,12 @@ test('transitAdvice: Overpass 失敗時仍能請 AI 回答', async () => {
   assert.equal(r.summary, '搭銀座線');
   assert.equal(r.steps.length, 1);
 });
+
+test('normalizeTransit: null/無/放棄的回答都不算建議', () => {
+  assert.equal(normalizeTransit({ summary: 'null', steps: ['null', '無', ''] }), null);
+  assert.equal(normalizeTransit({ summary: '建議用導航查大眾運輸', steps: [] }), null);
+  assert.equal(normalizeTransit({ summary: '建議用導航查大眾運輸', steps: ['淺草站搭銀座線'] }), null);
+  assert.equal(normalizeTransit({ summary: null, steps: null }), null);
+  const ok = normalizeTransit({ summary: 'null', steps: ['淺草站搭銀座線', 'null', '澀谷站下車'] });
+  assert.deepEqual(ok, { summary: '淺草站搭銀座線', steps: ['淺草站搭銀座線', '澀谷站下車'] });
+});
