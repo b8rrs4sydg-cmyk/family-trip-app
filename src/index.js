@@ -118,6 +118,100 @@ async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0) {
   return added;
 }
 
+
+// 住宿與一般項目的區分:AI 自動產生與手動複製的「住宿副本」在重排時會被清掉重做,不算原本的項目
+const isLodgingCopy = (r) => r.added_by === AI_LODGING || (r.added_by === COPY_MARK && isLodging(r));
+
+// 算出 AI 的排法(不寫入)。回傳的 days 每一格是:{id}(現有項目)、{copyOf,label}(住宿副本)、{add:{name,kind}}(AI 新增的地點)
+async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds) {
+  const { results } = await env.DB.prepare(
+    'SELECT id, name, lat, lng, day, time, kind, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
+  ).bind(tripId).all();
+  const real = results.filter((r) => !isLodgingCopy(r));
+  const hotels = real.filter((r) => isLodging(r));
+  const fixed = real.filter((r) => r.fixed && r.day > 0 && !isLodging(r));
+  const movable = real.filter((r) => !(r.fixed && r.day > 0) && !isLodging(r));
+  const movableIds = new Set(movable.map((m) => m.id));
+  const cleanDraft = draft ? draft.map((d) => d.filter((id) => movableIds.has(id))) : null;
+  const plan = await planTrip(env, movable, nDays, fixed, instruction, hotels, cleanDraft && cleanDraft.some((d) => d.length) ? cleanDraft : null);
+  // 沒有輸入想法時,不套用 AI 擅自改的停留時間與新增的地點(避免蓋掉使用者自己設的值)
+  if (!instruction) { plan.stays = []; plan.adds = []; }
+  const byId = new Map(real.map((r) => [r.id, r]));
+  const merged = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
+  const lp = lodgingPlan(hotels.map((h) => ({ id: h.id, day: h.day })), nDays);
+  const entry = (sp, label) => (sp.copy ? { copyOf: sp.hotel.id, label } : { id: sp.hotel.id });
+  const days = merged.map((items, i) => [
+    ...lp.head[i].map((sp) => entry(sp, '從住宿出發')),
+    ...items.map((x) => ({ id: x.id })),
+    ...lp.tail[i].map((sp) => entry(sp, '回住宿休息')),
+  ]);
+  // 新增的地點(這次 AI 提議的,加上使用者先前已接受在草稿裡的)放在當天最後一個地點之後、回住宿之前
+  const adds = [...(Array.isArray(draftAdds) ? draftAdds : []), ...plan.adds];
+  const seen = new Set(real.map((r) => String(r.name).toLowerCase()));
+  for (const a of adds) {
+    const name = clean(a?.name, 40), day = Math.round(Number(a?.day));
+    if (!name || !(day >= 1 && day <= nDays) || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const tail = lp.tail[day - 1].length;
+    days[day - 1].splice(days[day - 1].length - tail, 0, { add: { name, kind: a.kind === 'meal' ? 'meal' : 'place' } });
+  }
+  const nameOf = new Map(real.map((r) => [r.id, r.name]));
+  return {
+    days, tips: plan.tips, usedAi: plan.usedAi, lodging: hotels.length ? hotels[0].name : null,
+    stays: plan.stays.map((x) => ({ id: x.id, name: nameOf.get(x.id), minutes: x.minutes })),
+  };
+}
+
+// 套用(可能是使用者拖曳調整過的)排法。所有項目與欄位都重新驗證,不信任前端。
+async function applyProposal(env, tripId, nDays, body) {
+  const { results } = await env.DB.prepare(
+    'SELECT id, name, lat, lng, day, kind, url, note, added_by FROM items WHERE trip_id = ?',
+  ).bind(tripId).all();
+  const oldCopies = results.filter(isLodgingCopy);
+  const real = results.filter((r) => !isLodgingCopy(r));
+  const byId = new Map(real.map((r) => [r.id, r]));
+  const src = Array.isArray(body.days) ? body.days.slice(0, nDays) : [];
+  const placed = new Set();
+  const layout = {};
+  const inserts = [];
+  const addedNames = [];
+  const newItem = (day, name, kind, h, label) => {
+    const id = crypto.randomUUID();
+    const isCopy = !!h;
+    inserts.push(env.DB.prepare(
+      `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried)
+       VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?, NULL, ?, 0, ?)`,
+    ).bind(id, tripId, name, isCopy ? h.lat : null, isCopy ? h.lng : null, isCopy ? h.url ?? null : null,
+      isCopy ? [label, h.note].filter(Boolean).join(' · ').slice(0, 300) : '', isCopy ? AI_LODGING : 'AI', isCopy ? 'hotel' : kind, isCopy && h.lat != null ? 2 : 0));
+    if (!isCopy) addedNames.push({ name, day });
+    return id;
+  };
+  let count = 0;
+  for (let d = 1; d <= nDays; d++) {
+    layout[d] = [];
+    for (const e of Array.isArray(src[d - 1]) ? src[d - 1] : []) {
+      if (++count > 300) return { error: '項目太多了' };
+      if (e && typeof e.id === 'string' && byId.has(e.id) && !placed.has(e.id)) { placed.add(e.id); layout[d].push(e.id); }
+      else if (e && typeof e.copyOf === 'string' && byId.has(e.copyOf)) layout[d].push(newItem(d, byId.get(e.copyOf).name, 'hotel', byId.get(e.copyOf), clean(e.label, 20) || '住宿'));
+      else if (e?.add && clean(e.add.name, 40)) layout[d].push(newItem(d, clean(e.add.name, 40), KINDS.includes(e.add.kind) ? e.add.kind : 'place', null));
+    }
+  }
+  layout[0] = real.filter((r) => !placed.has(r.id)).map((r) => r.id); // 沒被安排到的留在「還沒安排」
+  const tips = {};
+  (Array.isArray(body.tips) ? body.tips : []).slice(0, nDays).forEach((t, i) => { const v = clean(t, 80); if (v) tips[i + 1] = v; });
+  const stays = (Array.isArray(body.stays) ? body.stays : []).filter((x) => byId.has(x?.id) && Number(x.minutes) >= 15 && Number(x.minutes) <= 720);
+  await env.DB.batch([
+    ...oldCopies.map((c) => env.DB.prepare('DELETE FROM items WHERE id = ? AND trip_id = ?').bind(c.id, tripId)),
+    ...inserts,
+    ...real.filter((r) => isLodging(r) && r.kind !== 'hotel').map((h) => env.DB.prepare("UPDATE items SET kind = 'hotel' WHERE id = ? AND trip_id = ?").bind(h.id, tripId)),
+    ...layoutStatements(env, tripId, layout),
+    env.DB.prepare('UPDATE trips SET tips = ? WHERE id = ?').bind(JSON.stringify(tips), tripId),
+    ...stays.map((x) => env.DB.prepare('UPDATE items SET stay = ? WHERE id = ? AND trip_id = ?').bind(Math.round(Number(x.minutes)), x.id, tripId)),
+    bump(env, tripId),
+  ]);
+  return { ok: true, added: addedNames };
+}
+
 async function handle(request, env) {
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean); // ['api','trips',id,...]
@@ -401,65 +495,26 @@ async function handle(request, env) {
   }
 
   // AI 排行程:指定過天數的項目(航班等)不動,其餘交給 AI 分天
-  if (parts[3] === 'plan' && method === 'POST') {
+  // AI 排行程分兩步:preview 只算出建議(不寫入資料庫),使用者在畫面上對照、拖曳、對話微調,確認後 apply 才寫入
+  if (parts[3] === 'plan' && parts.length === 5 && parts[4] === 'preview' && method === 'POST') {
     const body = await request.json().catch(() => ({}));
     const instruction = clean(body.instruction, 300);
-    // 先清掉上次 AI 自動產生的「出發 / 回住宿」副本
-    await env.DB.prepare('DELETE FROM items WHERE trip_id = ? AND added_by = ?').bind(tripId, AI_LODGING).run();
-    // 手動複製出來的住宿(出發點/回來點)也由 AI 重新安排
-    const { results: copiesOld } = await env.DB.prepare('SELECT id, name, kind FROM items WHERE trip_id = ? AND added_by = ?').bind(tripId, COPY_MARK).all();
-    const dropIds = copiesOld.filter((c) => isLodging(c)).map((c) => c.id);
-    for (const id of dropIds) await env.DB.prepare('DELETE FROM items WHERE id = ? AND trip_id = ?').bind(id, tripId).run();
-    const { results } = await env.DB.prepare(
-      'SELECT id, name, lat, lng, day, time, kind, fixed, stay, note FROM items WHERE trip_id = ?',
-    ).bind(tripId).all();
-    // 住宿不參與分天,而是當成每天的頭尾;有航班等指定天數的項目也不動
-    const hotels = results.filter((r) => isLodging(r));
-    const fixed = results.filter((r) => r.fixed && r.day > 0 && !isLodging(r));
-    const movable = results.filter((r) => !(r.fixed && r.day > 0) && !isLodging(r));
-    const plan = await planTrip(env, movable, exists.days, fixed, instruction, hotels);
-    // 沒有輸入想法時,不套用 AI 擅自改的停留時間與新增的地點(避免蓋掉使用者自己設的值)
-    if (!instruction) { plan.stays = []; plan.adds = []; }
-    const byId = new Map(results.map((r) => [r.id, r]));
-    const merged = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
-    const lp = lodgingPlan(hotels.map((h) => ({ id: h.id, day: h.day })), exists.days);
-    const copies = [];
-    const specToId = (spec, label) => {
-      if (!spec.copy) return spec.hotel.id;
-      const h = byId.get(spec.hotel.id);
-      const id = crypto.randomUUID();
-      copies.push(env.DB.prepare(
-        `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried)
-         VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?, NULL, 'hotel', 0, ?)`,
-      ).bind(id, tripId, h.name, h.lat, h.lng, h.url ?? null, [label, h.note].filter(Boolean).join(' · ').slice(0, 300), AI_LODGING, h.lat != null ? 2 : 0));
-      return id;
-    };
-    const layout = { 0: [] };
-    merged.forEach((items, i) => {
-      layout[i + 1] = [
-        ...lp.head[i].map((sp) => specToId(sp, '從住宿出發')),
-        ...items.map((x) => x.id),
-        ...lp.tail[i].map((sp) => specToId(sp, '回住宿休息')),
-      ];
-    });
-    const tips = {};
-    plan.tips.forEach((t, i) => { if (t) tips[i + 1] = t; });
-    await env.DB.batch([
-      ...copies,
-      ...hotels.filter((h) => h.kind !== 'hotel').map((h) => env.DB.prepare("UPDATE items SET kind = 'hotel' WHERE id = ? AND trip_id = ?").bind(h.id, tripId)),
-      ...layoutStatements(env, tripId, layout),
-      env.DB.prepare('UPDATE trips SET tips = ? WHERE id = ?').bind(JSON.stringify(tips), tripId),
-      ...plan.stays.map((x) => env.DB.prepare('UPDATE items SET stay = ? WHERE id = ? AND trip_id = ?').bind(x.minutes, x.id, tripId)),
-      bump(env, tripId),
-    ]);
-    // 使用者想要的主題而現有地點不夠時,AI 新增的地點(之後會自動查位置)
-    const added = [];
-    for (const a of plan.adds) {
-      await insertItem(env, tripId, exists.days, { name: a.name, day: a.day, kind: a.kind, who: 'AI' });
-      added.push({ name: a.name, day: a.day });
-    }
-    const nameOf = new Map(results.map((r) => [r.id, r.name]));
-    return json({ ok: true, usedAi: plan.usedAi, lodging: hotels.length ? hotels[0].name : null, stays: plan.stays.map((x) => ({ name: nameOf.get(x.id), minutes: x.minutes })), added });
+    const draft = Array.isArray(body.draft) ? body.draft.slice(0, exists.days).map((d) => (Array.isArray(d) ? d.filter((x) => typeof x === 'string').slice(0, 100) : [])) : null;
+    const adds = Array.isArray(body.draftAdds) ? body.draftAdds.slice(0, 6) : [];
+    return json(await buildProposal(env, tripId, exists.days, instruction, draft, adds));
+  }
+  if (parts[3] === 'plan' && parts.length === 5 && parts[4] === 'apply' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const r = await applyProposal(env, tripId, exists.days, body);
+    return r.error ? fail(r.error) : json(r);
+  }
+  // 舊的一步到位(預覽後立刻套用),保留給舊版畫面
+  if (parts[3] === 'plan' && parts.length === 4 && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const instruction = clean(body.instruction, 300);
+    const prop = await buildProposal(env, tripId, exists.days, instruction, null, []);
+    const r = await applyProposal(env, tripId, exists.days, { days: prop.days, tips: prop.tips, stays: prop.stays.map((x) => ({ id: x.id, minutes: x.minutes })) });
+    return r.error ? fail(r.error) : json({ ok: true, usedAi: prop.usedAi, lodging: prop.lodging, stays: prop.stays.map((x) => ({ name: x.name, minutes: x.minutes })), added: r.added });
   }
 
   return fail('不支援的操作', 404);
