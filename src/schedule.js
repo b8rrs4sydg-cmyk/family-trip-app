@@ -85,19 +85,44 @@ export function insertNearest(dayLists, item) {
   }
   let best = null;
   dayLists.forEach((list, d) => {
-    const pts = list.map((x, i) => ({ x, i })).filter((p) => hasXY(p.x));
+    // 機場等出入口固定在一天的頭尾,新地點只能插在它們之間
+    const { head, tail } = gateEdges(list, d === 0, d === dayLists.length - 1);
+    const pts = list.map((x, i) => ({ x, i })).filter((p) => hasXY(p.x) && !isGate(p.x));
     const base = dayPenalty(list);
-    // 這一天沒有任何有座標的項目:只算人數(很空的天優先)
-    if (!pts.length) { const c = 3 + list.length * 0.8 + base + slotPenalty(list, list.length); if (!best || c < best.c) best = { c, d, i: list.length }; return; }
+    const lo = head, hi = list.length - tail;
+    // 這一天沒有任何有座標的(非出入口)項目:只算人數(很空的天優先)
+    if (!pts.length) { const c = 3 + list.length * 0.8 + base + slotPenalty(list, hi); if (!best || c < best.c) best = { c, d, i: hi }; return; }
     for (let k = 0; k <= pts.length; k++) {
       const prev = pts[k - 1]?.x, next = pts[k]?.x;
       const detour = prev && next ? haversineKm(prev, item) + haversineKm(item, next) - haversineKm(prev, next) : haversineKm(prev || next, item);
-      const at = k === pts.length ? list.length : pts[k].i; // 插在第 k 個有座標項目之前
+      const at = Math.min(hi, Math.max(lo, k === pts.length ? hi : pts[k].i)); // 插在第 k 個有座標項目之前
       const c = detour + list.length * 0.8 + base + slotPenalty(list, at);
       if (!best || c < best.c) best = { c, d, i: at };
     }
   });
   dayLists[best.d].splice(best.i, 0, item);
+}
+
+// 機場、航班、交通這類「出入口」:去程在第一天最前、回程在最後一天最後
+const isGate = (x) => x?.kind === 'flight' || x?.kind === 'transport' || /機場|空港|airport/i.test(String(x?.name ?? ''));
+function gateEdges(list, first, last) {
+  let head = 0, tail = 0;
+  while (head < list.length && isGate(list[head])) head++;
+  if (head === list.length) return first ? { head: list.length, tail: 0 } : last ? { head: 0, tail: list.length } : { head: list.length, tail: 0 };
+  while (tail < list.length - head && isGate(list[list.length - 1 - tail])) tail++;
+  return { head, tail };
+}
+
+// AI 排完後把「很明顯是早餐/晚餐」的餐飲移到一天的合適位置(不動出入口與有指定時間的)
+export function placeMeals(list, keep = new Set()) {
+  const { head, tail } = gateEdges(list, false, false);
+  const moved = list.filter((x, i) => x.kind === 'meal' && !keep.has(x.id) && !x.time && i >= head && i < list.length - tail && mealTarget(x) !== 0.5);
+  for (const m of moved) list.splice(list.indexOf(m), 1);
+  const lo = () => gateEdges(list, false, false).head;
+  const early = moved.filter((m) => mealTarget(m) < 0.5), late = moved.filter((m) => mealTarget(m) > 0.5);
+  list.splice(lo(), 0, ...early);
+  list.splice(list.length - gateEdges(list, false, false).tail, 0, ...late);
+  return list;
 }
 
 // AI 排完後的檢查:同一天有兩個以上大型行程(樂園)時,把多的拿出來重新放到合適的別天。

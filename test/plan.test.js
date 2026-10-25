@@ -125,3 +125,18 @@ test('spreadHeavy: 同一天兩個樂園會拆開', async () => {
   assert.equal(days[0].filter((x) => /樂園|影城/.test(x.name)).length, 1);
   assert.equal(days.flat().length, 3);
 });
+
+test('insertNearest: 新地點不會插進第一天的兩個機場之間', async () => {
+  const { insertNearest } = await import('../src/schedule.js');
+  const days = [[{ id: 'tpe', name: '桃園國際機場', kind: 'flight', lat: 25.08, lng: 121.23 }, { id: 'nrt', name: '成田機場', kind: 'flight', lat: 35.77, lng: 140.39 }], [], [{ id: 'nrt2', name: '成田機場', kind: 'flight', lat: 35.77, lng: 140.39 }, { id: 'tpe2', name: '桃園國際機場', kind: 'flight', lat: 25.08, lng: 121.23 }]];
+  insertNearest(days, { id: 'm', name: '築地場外市場', kind: 'meal', lat: 35.665, lng: 139.77 });
+  const where = days.findIndex((l) => l.some((x) => x.id === 'm'));
+  const ids = days[where].map((x) => x.id);
+  if (where === 0) assert.ok(ids.indexOf('m') > ids.indexOf('nrt'));
+  if (where === 2) assert.ok(ids.indexOf('m') < ids.indexOf('nrt2'));
+});
+test('placeMeals: 燒肉移到最後、市場移到最前,出入口不動', async () => {
+  const { placeMeals } = await import('../src/schedule.js');
+  const l = [{ id: 'g', name: '成田機場', kind: 'flight' }, { id: 'y', name: '敘敘苑燒肉', kind: 'meal' }, { id: 'p', name: '迪士尼樂園', kind: 'place' }, { id: 'm', name: '築地場外市場', kind: 'meal' }];
+  assert.deepEqual(placeMeals(l).map((x) => x.id), ['g', 'm', 'p', 'y']);
+});
