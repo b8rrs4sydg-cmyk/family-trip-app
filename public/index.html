@@ -1034,6 +1034,21 @@ function observeDays() {
 
 // ================= 拖曳排序 =================
 // 按住每張卡片右上角的握把拖動:放到另一張卡片的上半/下半就插在它前/後,放到某一天的區塊上就加到那天最後。
+// 復原 AI 排行程:刪掉 AI 新增的、補回被清掉的、把每個項目放回原本的天與順序和停留時間
+async function undoPlan(snapshot) {
+  await run(async () => {
+    const now = (await api('GET', `/${tripId}`)).items;
+    const had = new Set(snapshot.map((i) => i.id)), has = new Set(now.map((i) => i.id));
+    for (const i of now) if (!had.has(i.id)) await api('DELETE', `/${tripId}/items/${i.id}`);
+    for (const i of snapshot) if (!has.has(i.id)) await api('POST', `/${tripId}/items/restore`, { item: i });
+    const layout = {};
+    [...snapshot].sort((a, b) => a.position - b.position).forEach((i) => { (layout[i.day] ||= []).push(i.id); });
+    await api('PUT', `/${tripId}/layout`, { layout });
+    for (const i of snapshot) { const cur = now.find((x) => x.id === i.id); if (cur && (cur.stay ?? null) !== (i.stay ?? null)) await api('PATCH', `/${tripId}/items/${i.id}`, { stay: i.stay ?? '' }); }
+    toast('已復原成排行程前的樣子');
+  });
+}
+
 let drag = null;
 
 // 把目前畫面上的排列(DOM 順序)轉成 [[id...]...](第 0 天起)
@@ -1102,7 +1117,7 @@ function startDrag(e, it, opts = {}) {
   const place = () => {
     if (!drag) return;
     drag.ghost.style.top = `${lastY - drag.offY}px`;
-    drag.ghost.style.left = `${drag.rect.left + (lastX - startX) * 0.2}px`;
+    drag.ghost.style.left = `${drag.rect.left + (lastX - startX) * 0.06}px`;
     const secs = [...document.querySelectorAll('#days .day')];
     let sec = secs.find((x) => lastY < x.getBoundingClientRect().bottom) || secs[secs.length - 1];
     if (!sec) return;
@@ -1118,7 +1133,7 @@ function startDrag(e, it, opts = {}) {
   // 手指停在畫面邊緣時持續捲動
   const tick = () => {
     if (!drag) return;
-    const top = 120, bottom = innerHeight - 100;
+    const top = Math.max(110, (document.querySelector('.sticky')?.getBoundingClientRect().bottom || 0) + 24), bottom = innerHeight - (innerWidth < 980 ? 100 : 70);
     drag.scrollV = lastY < top ? -Math.ceil((top - lastY) / 8) : lastY > bottom ? Math.ceil((lastY - bottom) / 8) : 0;
     if (drag.scrollV) { window.scrollBy(0, Math.max(-22, Math.min(22, drag.scrollV))); place(); }
     drag.raf = requestAnimationFrame(tick);
@@ -1645,8 +1660,8 @@ function showTrip() {
   };
   $('planPanel').querySelectorAll('.example').forEach((x) => { x.onclick = () => { $('planText').value = x.textContent; $('planText').focus(); }; });
   $('planGo').onclick = async () => {
-    if (trip.items.some((i) => i.day > 0 && !i.fixed) && !confirm('這會重新排列沒有指定天數的地點,確定嗎?')) return;
     const instruction = $('planText').value.trim();
+    const snapshot = JSON.parse(JSON.stringify(trip.items));
     const b = $('planGo'); const old = b.innerHTML; b.textContent = '排行程中…'; b.disabled = true;
     await run(async () => {
       const r = await api('POST', `/${tripId}/plan`, { instruction });
@@ -1654,7 +1669,7 @@ function showTrip() {
       const notes = [];
       for (const x of r.stays || []) notes.push(`「${x.name}」停留改成 ${fmtMin(x.minutes)}`);
       for (const x of r.added || []) notes.push(`第 ${x.day} 天加了「${x.name}」`);
-      toast(r.usedAi ? ['AI 排好了,可以再手動調整', ...notes].join('\n') : 'AI 暫時沒回應,已先依距離幫你排好(你的想法沒有套用,請稍後再試)');
+      toast(r.usedAi ? ['AI 排好了,可以再手動調整', ...notes].join('\n') : 'AI 暫時沒回應,已先依距離幫你排好(你的想法沒有套用,請稍後再試)', false, { label: '復原', run: () => undoPlan(snapshot) });
     });
     b.innerHTML = old; b.disabled = false; hydrateIcons(b);
   };
