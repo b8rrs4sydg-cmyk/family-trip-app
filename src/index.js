@@ -129,14 +129,24 @@ const isLodgingCopy = (r) => r.added_by === AI_LODGING || (r.added_by === COPY_M
 //   new    (預設,沒有想法時):已排在某天的項目一律不動;只把「還沒安排」的地點插進最順路的一天。
 //   adjust (有想法時):以目前排法為草稿請 AI 調整,沒被提到的盡量不動。
 //   all    (使用者明確要求重排整個行程):AI 重新分天。
+// 機場/車站這類已排在某一天的「出入口」:去程在第一天最前面、回程在最後一天最後面,AI 重排不能動
+const GATEWAY = /機場|空港|airport|港口|碼頭/i;
+const isGateway = (r) => r.day > 0 && !r.fixed && (r.kind === 'flight' || r.kind === 'transport' || GATEWAY.test(String(r.name)));
+
 async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, scopeIn) {
   const { results } = await env.DB.prepare(
     'SELECT id, name, lat, lng, day, position, time, kind, kind_set, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
   ).bind(tripId).all();
   const real = results.filter((r) => !isLodgingCopy(r));
   const hotels = real.filter((r) => isLodging(r));
-  const fixed = real.filter((r) => r.fixed && r.day > 0 && !isLodging(r));
-  const movable = real.filter((r) => !(r.fixed && r.day > 0) && !isLodging(r));
+  const gateways = real.filter((r) => isGateway(r) && !isLodging(r));
+  const gwIds = new Set(gateways.map((g) => g.id));
+  const edgeFirst = gateways.filter((g) => g.day === 1 && nDays > 1).sort((a, b) => a.position - b.position);
+  const edgeLast = gateways.filter((g) => g.day === nDays && nDays > 1).sort((a, b) => a.position - b.position);
+  const edgeIds = new Set([...edgeFirst, ...edgeLast].map((g) => g.id));
+  const fixed = real.filter((r) => ((r.fixed && r.day > 0) || gwIds.has(r.id)) && !isLodging(r));
+  const mergeable = fixed.filter((f) => !edgeIds.has(f.id));
+  const movable = real.filter((r) => !((r.fixed && r.day > 0) || gwIds.has(r.id)) && !isLodging(r));
   const nonHotel = real.filter((r) => !isLodging(r));
   const placed = nonHotel.filter((r) => r.day > 0);
   const byId = new Map(real.map((r) => [r.id, r]));
@@ -160,7 +170,9 @@ async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, 
     plan = await planTrip(env, movable, nDays, fixed, instruction, hotels, useDraft && useDraft.some((d) => d.length) ? useDraft : null);
     // 沒有輸入想法時,不套用 AI 擅自改的停留時間與新增的地點(避免蓋掉使用者自己設的值)
     if (!instruction) { plan.stays = []; plan.adds = []; }
-    lists = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
+    lists = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), mergeable);
+    if (edgeFirst.length) lists[0] = [...edgeFirst, ...lists[0]];
+    if (edgeLast.length) lists[nDays - 1] = [...lists[nDays - 1], ...edgeLast];
   }
   const days = lists.map((items, i) => [
     ...lp.head[i].map((sp) => entry(sp, '從住宿出發')),
