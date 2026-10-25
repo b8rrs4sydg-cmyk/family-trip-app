@@ -177,3 +177,12 @@ test('suggestStay / addMinutes', async () => {
   assert.equal(addMinutes('23:30', 120), null);
   assert.equal(addMinutes('', 30), null);
 });
+
+test('geocoding urls: bounded 只在有已知地點時加上', async () => {
+  const { nominatimUrl, photonUrl } = await import('../public/geocoding.js');
+  const near = [{ lat: 35.7, lng: 139.8 }];
+  assert.match(nominatimUrl('x', near, undefined, true), /bounded=1/);
+  assert.doesNotMatch(nominatimUrl('x', near), /bounded/);
+  assert.doesNotMatch(nominatimUrl('x', [], undefined, true), /bounded/);
+  assert.match(photonUrl('x', near, undefined, true), /bbox=/);
+});
