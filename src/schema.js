@@ -26,7 +26,8 @@ const STATEMENTS = [
     fixed INTEGER NOT NULL DEFAULT 0,
     cost REAL,
     geo_tried INTEGER NOT NULL DEFAULT 0,
-    travel TEXT
+    travel TEXT,
+    stay INTEGER
   )`,
   'CREATE INDEX IF NOT EXISTS items_trip ON items(trip_id, day, position)',
 ];
@@ -39,6 +40,7 @@ const ADDED_COLUMNS = [
   ['items', 'cost', 'REAL'],
   ['items', 'geo_tried', 'INTEGER NOT NULL DEFAULT 0'],
   ['items', 'travel', 'TEXT'],
+  ['items', 'stay', 'INTEGER'],
   ['trips', 'start_date', 'TEXT'],
 ];
 

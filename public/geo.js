@@ -31,6 +31,27 @@ export function estimateTravel(a, b, mode = 'auto') {
   return { mode: m, km: road, min };
 }
 
+// 依地點名稱和類型建議停留多久(分鐘);交通、住宿不設
+export function suggestStay(name = '', kind = 'place') {
+  if (kind === 'flight' || kind === 'transport' || kind === 'hotel') return null;
+  if (kind === 'meal') return 60;
+  const n = String(name);
+  if (/機場|空港|airport/i.test(n)) return 120;
+  if (/樂園|迪士尼|環球|Disney|Universal|Puroland|ランド|シー/i.test(n)) return 360;
+  if (/美術館|博物館|水族館|動物園|科學館/.test(n)) return 120;
+  if (/購物|商場|百貨|outlet|Outlet|アウトレット|市場|商店街|橫丁/.test(n)) return 90;
+  if (/寺|神社|神宮|城|塔|天空樹|展望|公園|庭園|橋/.test(n)) return 60;
+  return 90;
+}
+
+// "HH:MM" 加上分鐘(同一天內,超過午夜就停在 23:59)
+export function addMinutes(time, min) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time || '');
+  if (!m || !Number.isFinite(min)) return null;
+  const t = Math.min(23 * 60 + 59, +m[1] * 60 + +m[2] + Math.round(min));
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
 export function fmtKm(km) {
   return km < 1 ? `${Math.max(10, Math.round(km * 100) * 10)} 公尺` : `${km < 10 ? km.toFixed(1) : Math.round(km)} 公里`;
 }
@@ -70,7 +91,7 @@ export function tripText(trip) {
     lines.push(d === 0 ? '【還沒安排】' : `【第 ${d} 天${dayDateLabel(trip.start_date, d) ? ' ' + dayDateLabel(trip.start_date, d) : ''}】`);
     if (d > 0 && trip.tips?.[d]) lines.push(`💡 ${trip.tips[d]}`);
     for (const i of items) {
-      lines.push(`${i.time ? i.time + ' ' : '・'}${i.name}${i.cost ? `(${money(i.cost)})` : ''}${i.note ? ` — ${i.note}` : ''}`);
+      lines.push(`${i.time ? i.time + ' ' : '・'}${i.name}${i.stay ? `(停留${fmtMin(i.stay)})` : ''}${i.cost ? `(${money(i.cost)})` : ''}${i.note ? ` — ${i.note}` : ''}`);
     }
   }
   return lines.join('\n');
