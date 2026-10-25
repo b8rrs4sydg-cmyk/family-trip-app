@@ -42,6 +42,7 @@ const ADDED_COLUMNS = [
   ['items', 'travel', 'TEXT'],
   ['items', 'stay', 'INTEGER'],
   ['trips', 'start_date', 'TEXT'],
+  ['trips', 'code', 'TEXT'],
 ];
 
 async function init(env) {
@@ -53,6 +54,7 @@ async function init(env) {
       if (t === table && !have.has(name)) await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`).run();
     }
   }
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS trips_code ON trips(code)').run();
 }
 
 let ready = null;

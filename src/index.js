@@ -6,6 +6,7 @@ import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from '
 import { geocode } from './geocode.js';
 import { suggestStay } from '../public/geo.js';
 import { transitAdvice } from './transit.js';
+import { newCode, normalizeCode, formatCode } from './code.js';
 import { lodgingPlan, isLodging, AI_LODGING, COPY_MARK } from './lodging.js';
 import { suggestPlaces } from './suggest.js';
 import { computeRoute, MODES, validPoint, sanitizeDeparture } from './route.js';
@@ -238,6 +239,21 @@ async function handle(request, env) {
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean); // ['api','trips',id,...]
   const method = request.method;
+  // 用短碼加入行程:POST /api/join { code } → { id, name }。短碼空間夠大,另外限制每個 IP 每分鐘的嘗試次數。
+  if (parts[0] === 'api' && parts[1] === 'join' && parts.length === 2 && method === 'POST') {
+    await ensureSchema(env);
+    const ip = request.headers.get('cf-connecting-ip') || 'x';
+    const rl = new Request(`https://join-rl.invalid/${ip}/${Math.floor(Date.now() / 60000)}`);
+    const seen = Number((await caches.default.match(rl)?.then((r) => r?.text())) || 0);
+    if (seen >= 15) return fail('試太多次了,請一分鐘後再試', 429);
+    await caches.default.put(rl, new Response(String(seen + 1), { headers: { 'cache-control': 'max-age=90' } }));
+    const body = await request.json().catch(() => ({}));
+    const code = normalizeCode(body.code);
+    if (!code) return fail('短碼是 8 個字,例如 ABCD-EFGH,請再確認');
+    const t = await env.DB.prepare('SELECT id, name FROM trips WHERE code = ?').bind(code).first();
+    return t ? json({ id: t.id, name: t.name }) : fail('找不到這個短碼,請向分享的人再確認一次', 404);
+  }
+
   if (parts[0] !== 'api' || parts[1] !== 'trips') return null;
   await ensureSchema(env);
 
@@ -301,6 +317,17 @@ async function handle(request, env) {
     } catch (e) {
       return fail(e.message || '無法加入,請再試一次');
     }
+  }
+
+  // 這個行程的分享短碼(第一次要時產生)
+  if (parts[3] === 'code' && parts.length === 4 && method === 'POST') {
+    let row = await env.DB.prepare('SELECT code FROM trips WHERE id = ?').bind(tripId).first();
+    for (let i = 0; i < 6 && !row?.code; i++) {
+      const c = newCode();
+      try { await env.DB.prepare('UPDATE trips SET code = ? WHERE id = ? AND code IS NULL').bind(c, tripId).run(); } catch { /* 撞號:換一個再試 */ }
+      row = await env.DB.prepare('SELECT code FROM trips WHERE id = ?').bind(tripId).first();
+    }
+    return row?.code ? json({ code: formatCode(row.code) }) : fail('暫時無法產生短碼,請再試一次', 503);
   }
 
   // 復原刪除:把先前刪掉的項目原樣放回去(含原本的天與位置)
