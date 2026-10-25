@@ -317,7 +317,7 @@ async function handle(request, env) {
     const { from, to } = body;
     if (!validPoint(from) || !validPoint(to)) return fail('座標格式不對');
     const r3 = (n) => n.toFixed(3);
-    const key = new Request(`https://transit-cache.invalid/${r3(from.lat)},${r3(from.lng)}/${r3(to.lat)},${r3(to.lng)}`);
+    const key = new Request(`https://transit-cache.invalid/v2/${r3(from.lat)},${r3(from.lng)}/${r3(to.lat)},${r3(to.lng)}`);
     const hit = await caches.default.match(key);
     if (hit) return json(await hit.json());
     const r = await transitAdvice(env, { from: { ...from, name: clean(from.name, 40) }, to: { ...to, name: clean(to.name, 40) } });
