@@ -4,6 +4,7 @@ import { ensureSchema } from './schema.js';
 import { insertIndex, mergeFixed } from './schedule.js';
 import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from './nl.js';
 import { geocode } from './geocode.js';
+import { suggestStay } from '../public/geo.js';
 import { suggestPlaces } from './suggest.js';
 import { computeRoute, MODES, validPoint, sanitizeDeparture } from './route.js';
 import { translateText, translateImage, DIRECTIONS, IMAGE_RE, MAX_IMAGE_CHARS } from './translate.js';
@@ -26,7 +27,7 @@ const int = (v, lo, hi, d) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
 };
 
-const ITEM_COLS = 'id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, travel';
+const ITEM_COLS = 'id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, travel, stay';
 const GEOCODABLE = "('place', 'hotel')"; // 吃飯、交通這類通常不是一個查得到的地名
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,10 +66,11 @@ async function insertItem(env, tripId, nDays, e) {
   order.splice(idx, 0, id);
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried, stay)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(id, tripId, e.day, idx, e.name, e.lat ?? null, e.lng ?? null, e.url ?? null, e.note ?? '', e.who ?? '',
-      e.time ?? null, KINDS.includes(e.kind) ? e.kind : 'place', e.day > 0 && e.fixed ? 1 : 0, e.lat != null ? 1 : 0),
+      e.time ?? null, KINDS.includes(e.kind) ? e.kind : 'place', e.day > 0 && e.fixed ? 1 : 0, e.lat != null ? 1 : 0,
+      e.stay !== undefined ? e.stay : suggestStay(e.name, KINDS.includes(e.kind) ? e.kind : 'place')),
     ...layoutStatements(env, tripId, { [e.day]: order }),
     bump(env, tripId),
   ]);
@@ -197,6 +199,12 @@ async function handle(request, env) {
       const c = body.cost === '' || body.cost === null ? null : Number(body.cost);
       if (c !== null && (!Number.isFinite(c) || c < 0 || c > 1e9)) return fail('金額格式不對');
       sets.push('cost = ?'); args.push(c);
+    }
+    // 停留時間(分鐘);空字串 = 不設定
+    if (body.stay !== undefined) {
+      const m = body.stay === '' || body.stay === null ? null : Math.round(Number(body.stay));
+      if (m !== null && (!Number.isFinite(m) || m < 0 || m > 1440)) return fail('停留時間格式不對');
+      sets.push('stay = ?'); args.push(m);
     }
     // 從這一站到下一站的交通方式;空字串 = 用建議的
     if (body.travel !== undefined) {

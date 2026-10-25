@@ -166,3 +166,14 @@ test('長途交通:成田機場到淺草寺大眾運輸約 1.5 小時內、不�
   assert.ok(t.min >= 60 && t.min <= 110, `transit ${t.min}`);
   assert.ok(estimateTravel(narita, asakusa, 'drive').min <= 100);
 });
+
+test('suggestStay / addMinutes', async () => {
+  const { suggestStay, addMinutes } = await import('../public/geo.js');
+  assert.equal(suggestStay('淺草寺'), 60);
+  assert.equal(suggestStay('三麗鷗彩虹樂園'), 360);
+  assert.equal(suggestStay('航班:台灣 → 東京', 'flight'), null);
+  assert.equal(suggestStay('某咖啡店'), 90);
+  assert.equal(addMinutes('13:00', 90), '14:30');
+  assert.equal(addMinutes('23:30', 120), '23:59');
+  assert.equal(addMinutes('', 30), null);
+});
