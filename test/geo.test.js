@@ -173,6 +173,7 @@ test('suggestStay / addMinutes', async () => {
   assert.equal(suggestStay('三麗鷗彩虹樂園'), 360);
   assert.equal(suggestStay('航班:台灣 → 東京', 'flight'), null);
   assert.equal(suggestStay('某咖啡店'), 90);
+  assert.equal(suggestStay('新宿王子飯店'), null);
   assert.equal(addMinutes('13:00', 90), '14:30');
   assert.equal(addMinutes('23:30', 120), null);
   assert.equal(addMinutes('', 30), null);
