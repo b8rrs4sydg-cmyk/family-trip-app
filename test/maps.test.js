@@ -64,3 +64,35 @@ test('importPlace:純文字直接當名稱;連結失敗時用分享文字的名�
   assert.equal(r.name, '一蘭拉麵');
   assert.match(r.url, /^https:\/\/www\.google\.com/);
 });
+
+test('parseMapsUrl:新版分享連結的各種格式(座標在路徑、只有名稱、導航路線、cid)', () => {
+  const asakusa = (u) => { const r = parseMapsUrl(u); return [r.name, r.lat, r.lng]; };
+  const JA = '%E3%82%B5%E3%83%B3%E3%83%AA%E3%82%AA%E3%83%94%E3%83%A5%E3%83%BC%E3%83%AD%E3%83%A9%E3%83%B3%E3%83%89';
+  // 只有名稱(沒有座標):座標靠之後用名稱查
+  assert.deepEqual(asakusa(`https://www.google.com/maps/place/${JA}/data=!4m2!3m1!1s0x6018e1:0xabc`), ['サンリオピューロランド', null, null]);
+  assert.deepEqual(asakusa(`https://www.google.com/maps/place/${JA}/@35.6245615,139.4294453,17z`), ['サンリオピューロランド', 35.6245615, 139.4294453]);
+  // 座標在路徑裡
+  assert.deepEqual(asakusa('https://www.google.com/maps/search/35.6246,139.4262'), [null, 35.6246, 139.4262]);
+  assert.deepEqual(asakusa('https://www.google.com/maps/place/35.6246199,139.4262303'), [null, 35.6246199, 139.4262303]);
+  assert.deepEqual(asakusa('https://www.google.com/maps/@35.6246,139.4262,15z'), [null, 35.6246, 139.4262]);
+  assert.deepEqual(asakusa('https://maps.google.com/?q=35.6246,139.4262'), [null, 35.6246, 139.4262]);
+  assert.deepEqual(asakusa('https://maps.google.com/?q=Sanrio+Puroland&ll=35.6246,139.4262'), ['Sanrio Puroland', 35.6246, 139.4262]);
+  // 導航路線:終點名稱;@ 只是畫面中心,不能當作終點座標
+  assert.deepEqual(asakusa('https://www.google.com/maps/dir/Tokyo+Station/Sanrio+Puroland/@35.64,139.4,11z'), ['Sanrio Puroland', null, null]);
+  assert.deepEqual(asakusa('https://www.google.com/maps/dir/?api=1&destination=35.6246,139.4262'), [null, 35.6246, 139.4262]);
+  assert.deepEqual(asakusa('https://www.google.com/maps/search/?api=1&query=Sanrio%20Puroland'), ['Sanrio Puroland', null, null]);
+  // cid:沒有名稱也沒有座標,但會帶出 cid 讓呼叫端給明確的錯誤訊息
+  assert.equal(parseMapsUrl('https://maps.google.com/?cid=1234567890123456789').cid, '1234567890123456789');
+  // 日期、價格這類不是座標的數字不會被誤判
+  const noCoord = parseMapsUrl('https://www.google.com/maps/search/2026,11');
+  assert.deepEqual([noCoord.lat, noCoord.lng], [null, null]);
+});
+
+test('importPlace:有座標但沒名稱時用貼上的文字,再不行用預設名稱', async () => {
+  const none = async () => { throw new Error('should not fetch'); };
+  const a = await importPlace('我的飯店 https://www.google.com/maps/search/35.6246,139.4262', none);
+  assert.equal(a.name, '我的飯店');
+  assert.equal(a.lat, 35.6246);
+  const b = await importPlace('https://www.google.com/maps/search/35.6246,139.4262', none);
+  assert.equal(b.name, '地圖上的地點');
+});

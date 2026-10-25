@@ -86,7 +86,7 @@ async function smartAdd(env, tripId, nDays, text, who) {
     let rest = text;
     for (const tok of [d?.text, t?.text]) if (tok) rest = rest.replace(tok, ' ');
     const place = await importPlace(rest);
-    if (!place.name) throw new Error('讀不到地點名稱,請改貼「分享」的連結,或直接輸入地點名稱');
+    if (!place.name) throw new Error(place.cid ? '這種連結(含 cid)沒有地點資訊。請在 Google 地圖按「分享」重新複製連結,或直接輸入地點名稱' : '讀不到地點名稱,請改貼「分享」的連結,或直接輸入地點名稱');
     const day = d?.day && d.day <= nDays ? d.day : 0;
     const e = { ...place, day, time: t?.time ?? null, kind: 'place', fixed: day > 0, who };
     return [{ id: await insertItem(env, tripId, nDays, e), name: place.name, day, time: e.time }];
@@ -194,9 +194,16 @@ async function handle(request, env) {
       if (c !== null && (!Number.isFinite(c) || c < 0 || c > 1e9)) return fail('金額格式不對');
       sets.push('cost = ?'); args.push(c);
     }
+    // 手動指定位置(在地圖上點選,或瀏覽器自己查到的座標);geoTried 單獨為 true 表示「查過了、沒找到」
+    const pinned = body.lat !== undefined && body.lng !== undefined && body.lat !== null && body.lng !== null;
+    if (pinned) {
+      const lat = Number(body.lat), lng = Number(body.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return fail('座標格式不對');
+      sets.push('lat = ?', 'lng = ?', 'geo_tried = 1'); args.push(lat, lng);
+    } else if (body.geoTried === true) sets.push('geo_tried = 1');
     // 名稱改了、而且不是從地圖連結來的,就重新定位
-    if (newName) sets.push('lat = CASE WHEN url IS NULL AND name != ? THEN NULL ELSE lat END', 'lng = CASE WHEN url IS NULL AND name != ? THEN NULL ELSE lng END', 'geo_tried = CASE WHEN url IS NULL AND name != ? THEN 0 ELSE geo_tried END');
-    if (newName) args.push(newName, newName, newName);
+    if (newName && !pinned) sets.push('lat = CASE WHEN url IS NULL AND name != ? THEN NULL ELSE lat END', 'lng = CASE WHEN url IS NULL AND name != ? THEN NULL ELSE lng END', 'geo_tried = CASE WHEN url IS NULL AND name != ? THEN 0 ELSE geo_tried END');
+    if (newName && !pinned) args.push(newName, newName, newName);
     const r = await env.DB.batch([
       env.DB.prepare(`UPDATE items SET ${sets.join(', ')} WHERE id = ? AND trip_id = ?`).bind(...args, parts[4], tripId),
       bump(env, tripId),
@@ -245,7 +252,7 @@ async function handle(request, env) {
     for (const [i, it] of todo.entries()) {
       if (i) await sleep(1100);
       let pt = null;
-      try { pt = await geocode(it.name, near, fetch, env.GEOCODE_BASE || undefined); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
+      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
       stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 1 WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, it.id, tripId));
       if (pt) { found++; near.push(pt); }
     }
