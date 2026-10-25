@@ -678,7 +678,8 @@ function fillHop(li) {
   if (r?.source === 'google') tag = r.predicted ? `依 ${plan.date.slice(5).replace('-', '/')} ${a.time || '09:00'} 出發預測` : '即時路況';
   else if (r?.source === 'osrm') tag = '依道路計算,無路況';
   const delay = r?.delayMin >= 3 ? `,塞車多 ${r.delayMin} 分` : '';
-  const leave = a.time && a.stay ? addMinutes(a.time, a.stay) : null;
+  const tm = computeTimes().get(a.id);
+  const leave = tm?.leave || (tm?.arrive && a.kind !== 'flight' ? tm.arrive : null);
   const arrive = leave ? addMinutes(leave, min) : null;
   const suggested = suggestedMode(a, b);
   // 超過 6 公里就不提供步行(除非原本就選了步行)
@@ -696,7 +697,7 @@ function fillHop(li) {
   li.querySelector('.hop-in').replaceChildren(
     el('div', { class: 'hop-top' }, icon('clock', 14),
       el('span', {}, `${MODE_LABEL[plan.est.mode]}約 ${fmtMin(min)}(${fmtKm(km)}${delay})· ${tag}`),
-      arrive ? el('span', {}, `${leave} 離開 → 約 ${arrive} 抵達`) : null,
+      arrive ? el('span', {}, `${leave} 出發 → 約 ${arrive} 抵達`) : null,
       el('a', { href: directionsUrl(a, b, plan.est.mode), target: '_blank', rel: 'noopener' }, '怎麼去 ›')),
     plan.est.mode === 'transit' && plan.est.km > 1.2 ? rideEl(a, b) : null,
     el('div', { class: 'tchips', role: 'group', 'aria-label': '改交通方式' }, ...chips));
@@ -705,7 +706,7 @@ function fillHop(li) {
 // 換交通方式:存在這一站上(大家共用),立刻重畫並查這個方式的路線
 async function setTravel(a, mode) {
   a.travel = mode;
-  document.querySelectorAll('.hop').forEach(fillHop);
+  document.querySelectorAll('.hop').forEach(fillHop); updateTimes();
   maybeRoutes();
   try { await api('PATCH', `/${tripId}/items/${a.id}`, { travel: mode }); } catch (e) { toast(e.message, true); }
 }
@@ -732,7 +733,7 @@ function pumpRides() {
         rideBusy.delete(k);
         const ok = {}; rides.forEach((v, key) => { if (v !== 'fail' && v !== 'none') ok[key] = v; });
         store.set('rides2', Object.fromEntries(Object.entries(ok).slice(-80)));
-        document.querySelectorAll('.hop').forEach(fillHop);
+        document.querySelectorAll('.hop').forEach(fillHop); updateTimes();
         pumpRides();
       });
   }
@@ -751,6 +752,40 @@ function maybeRides() {
     }
   });
   pumpRides();
+}
+
+// ---------- 每一站的抵達 / 離開時間 ----------
+// 有填時間的站就是那個時間抵達(航班則是起飛);沒填時間的站,用前一站的離開時間加上路上時間來推算(標「約」)。
+function hopMinutes(a, b, day) {
+  const plan = hopPlan(a, b, day);
+  const hit = routeCache.get(plan.key);
+  return hit && hit.data.source !== 'none' ? hit.data.min : plan.est.min;
+}
+function computeTimes() {
+  const out = new Map();
+  groups().forEach((arr, day) => {
+    if (day === 0) return;
+    let leave = null;
+    arr.forEach((it, i) => {
+      let arrive = it.time || null, est = false;
+      if (!arrive && leave && i > 0 && hasCoord(arr[i - 1]) && hasCoord(it)) { arrive = addMinutes(leave, hopMinutes(arr[i - 1], it, day)); est = !!arrive; }
+      const out2 = it.stay && arrive ? addMinutes(arrive, it.stay) : null;
+      out.set(it.id, { arrive, leave: out2, est });
+      leave = out2 || (it.kind === 'flight' ? null : arrive);
+    });
+  });
+  return out;
+}
+function updateTimes() {
+  const t = computeTimes();
+  document.querySelectorAll('.times').forEach((n) => {
+    const it = trip.items.find((x) => x.id === n.dataset.id);
+    const v = t.get(n.dataset.id);
+    if (!it || !v || !v.arrive) { n.hidden = true; return; }
+    n.hidden = false;
+    const first = it.kind === 'flight' ? '起飛' : it.kind === 'hotel' ? '入住' : '抵達';
+    n.textContent = `${first} ${v.est ? '約 ' : ''}${v.arrive}${v.leave ? ` · ${it.kind === 'hotel' ? '退房' : '離開'} ${v.leave}` : ''}`;
+  });
 }
 
 function hopRow(a, b, day) {
@@ -772,7 +807,7 @@ function pumpRoutes() {
       .catch(() => routeCache.set(job.plan.key, { at: Date.now(), data: { source: 'none' } })) // 失敗就先用估算,等到期再重試
       .finally(() => {
         routeInflight.delete(job.plan.key); routeActive--;
-        document.querySelectorAll('.hop').forEach(fillHop);
+        document.querySelectorAll('.hop').forEach(fillHop); updateTimes();
         pumpRoutes();
       });
   }
@@ -818,7 +853,7 @@ function itemRow(it, day, idx) {
       el('div', { class: 'top' },
         el('div', { class: 'main' },
           el('div', { class: 'meta-line' },
-            it.time ? el('span', { class: 'tpill' }, it.stay && addMinutes(it.time, it.stay) ? `${it.time}–${addMinutes(it.time, it.stay)}` : it.time) : null,
+            el('span', { class: 'tpill times', 'data-id': it.id }),
             el('span', { class: 'ktag' }, icon(kIcon, 13), kLabel),
             it.stay ? el('span', { class: 'ktag' }, icon('clock', 13), `停留 ${fmtMin(it.stay)}`) : null,
             it.cost ? el('span', {}, money(it.cost)) : null),
@@ -883,6 +918,7 @@ function render() {
   drawMapChips();
   drawMap();
   maybeGeocode();
+  updateTimes();
   maybeRoutes();
 }
 

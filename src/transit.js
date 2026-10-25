@@ -4,7 +4,7 @@
 import { parseAiResponse } from './plan.js';
 import { haversineKm } from '../public/geo.js';
 
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
 const UA = 'family-trip/1.0 (+https://github.com/b8rrs4sydg-cmyk/Trip)';
 
 const SCHEMA = {
@@ -58,7 +58,7 @@ export async function nearbyTransit(point, fetchFn = fetch) {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA },
         body: `data=${encodeURIComponent(q)}`,
-        signal: AbortSignal.timeout(7000),
+        signal: AbortSignal.timeout(4500),
       });
       if (!res.ok) throw new Error(`overpass ${res.status}`);
       return parseOverpass(await res.json(), point);
