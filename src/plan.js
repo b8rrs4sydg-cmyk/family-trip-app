@@ -7,6 +7,9 @@ const SYSTEM = `你是台灣旅遊行程規劃助手,使用者是家中長輩,�
 - 每天地點數量盡量平均,長輩體力有限,每天不要排太滿。
 - 「已固定行程」是使用者指定好的(例如航班),不要動它,也不要把它放進 days。請依它安排:有航班抵達的第一天少排一點;最後一天有航班離開,地點要排在出發前、集中在機場附近順路的地方。
 - tips 是每天一句簡短提醒(如:早點出發、這天走路較多、記得預約)。
+- 若有「使用者的想法」,要優先照辦,並且仍遵守上面的規則:
+  · 想把某地點「安排久一點/短一點」:在 stays 裡填那個地點的 id 與新的停留分鐘數(15 到 720);沒被要求的地點不要放進 stays。
+  · 想要某天有某種主題(例如逛街、美食、親子):先從現有地點挑符合的排到那天;不夠時,在 adds 裡新增最多 3 個真實存在、知名、地圖上搜得到的地點(name 用正式名稱、day 是第幾天、kind 是 place 或 meal),並與該天其他地點在同一區域。沒有這類需求就讓 adds 留空陣列。
 只輸出 JSON。`;
 
 const SCHEMA = {
@@ -14,8 +17,10 @@ const SCHEMA = {
   properties: {
     days: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
     tips: { type: 'array', items: { type: 'string' } },
+    stays: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, minutes: { type: 'number' } }, required: ['id', 'minutes'] } },
+    adds: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, day: { type: 'number' }, kind: { type: 'string', enum: ['place', 'meal'] } }, required: ['name', 'day', 'kind'] } },
   },
-  required: ['days', 'tips'],
+  required: ['days', 'tips', 'stays', 'adds'],
 };
 
 const dist = (a, b) => Math.hypot(a.lat - b.lat, (a.lng - b.lng) * Math.cos((a.lat * Math.PI) / 180));
@@ -80,7 +85,24 @@ export function normalizePlan(raw, items, nDays) {
   // 遺漏的放到目前最少的那天
   for (const it of missing) days.reduce((m, d) => (d.length < m.length ? d : m), days[0]).push(it.id);
   const tips = Array.isArray(raw?.tips) ? raw.tips.slice(0, nDays).map((t) => String(t ?? '').slice(0, 80)) : [];
-  return { days, tips };
+  // 依使用者想法調整的停留時間與新增的地點(都要驗證)
+  const stays = [];
+  for (const x of Array.isArray(raw?.stays) ? raw.stays : []) {
+    const m = Math.round(Number(x?.minutes));
+    if (typeof x?.id === 'string' && valid.has(x.id) && Number.isFinite(m) && m >= 15 && m <= 720 && !stays.some((y) => y.id === x.id)) stays.push({ id: x.id, minutes: m });
+  }
+  const have = items.map((i) => String(i.name).toLowerCase());
+  const adds = [];
+  for (const x of Array.isArray(raw?.adds) ? raw.adds : []) {
+    const name = String(x?.name ?? '').trim().slice(0, 40);
+    const day = Math.round(Number(x?.day));
+    const key = name.toLowerCase();
+    if (!name || !Number.isInteger(day) || day < 1 || day > nDays) continue;
+    if (have.some((h) => h.includes(key) || key.includes(h)) || adds.some((a) => a.name.toLowerCase() === key)) continue;
+    adds.push({ name, day, kind: x?.kind === 'meal' ? 'meal' : 'place' });
+    if (adds.length >= 3) break;
+  }
+  return { days, tips, stays, adds };
 }
 
 export function parseAiResponse(result) {
@@ -93,16 +115,16 @@ export function parseAiResponse(result) {
   try { return JSON.parse(m[0]); } catch { return null; }
 }
 
-export async function planTrip(env, items, nDays, fixed = []) {
-  if (!items.length) return { days: Array.from({ length: nDays }, () => []), tips: [], usedAi: false };
+export async function planTrip(env, items, nDays, fixed = [], instruction = '') {
+  if (!items.length) return { days: Array.from({ length: nDays }, () => []), tips: [], stays: [], adds: [], usedAi: false };
   const list = items.map((i) => ({
-    id: i.id, name: i.name,
+    id: i.id, name: i.name, stayMinutes: i.stay ?? undefined,
     lat: i.lat != null ? +i.lat.toFixed(4) : undefined,
     lng: i.lng != null ? +i.lng.toFixed(4) : undefined,
   }));
   const messages = [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `天數:${nDays}\n已固定行程:${JSON.stringify(fixed.map((f) => ({ day: f.day, time: f.time, title: f.name })))}\n地點:${JSON.stringify(list)}\n請輸出 {"days":[[id,...],...共${nDays}天],"tips":[每天一句提醒,共${nDays}句]}` },
+    { role: 'user', content: `天數:${nDays}\n已固定行程:${JSON.stringify(fixed.map((f) => ({ day: f.day, time: f.time, title: f.name })))}\n地點:${JSON.stringify(list)}\n${instruction ? `使用者的想法:${instruction}\n` : ''}請輸出 {"days":[[id,...],...共${nDays}天],"tips":[每天一句提醒,共${nDays}句],"stays":[{"id":"","minutes":60}],"adds":[{"name":"","day":1,"kind":"place"}]}` },
   ];
   const base = { messages, max_tokens: 1500, chat_template_kwargs: { enable_thinking: false } };
   // 先要求 json_schema;模型不支援就退回純文字再自行解析。
@@ -114,5 +136,5 @@ export async function planTrip(env, items, nDays, fixed = []) {
       console.error('AI plan failed', e);
     }
   }
-  return { ...fallbackPlan(items, nDays), usedAi: false };
+  return { ...fallbackPlan(items, nDays), stays: [], adds: [], usedAi: false };
 }
