@@ -23,16 +23,18 @@ export function viewbox(points, pad = 2) {
   return [f(Math.min(...lngs) - pad), f(Math.max(...lats) + pad), f(Math.max(...lngs) + pad), f(Math.min(...lats) - pad)].join(',');
 }
 
-export function nominatimUrl(q, near = [], base = NOMINATIM) {
+// bounded:只在已知地點附近找(找不到再放寬),避免「Sanrio Puroland」這種英文名跑到別的城市
+export function nominatimUrl(q, near = [], base = NOMINATIM, bounded = false) {
   const p = new URLSearchParams({ q, format: 'jsonv2', limit: '1', 'accept-language': 'zh-TW' });
   const vb = viewbox(near);
-  if (vb) p.set('viewbox', vb); // bounded 預設為 0:只是優先,不是限制
+  if (vb) { p.set('viewbox', vb); if (bounded) p.set('bounded', '1'); }
   return `${base}/search?${p}`;
 }
 
-export function photonUrl(q, near = [], base = PHOTON) {
+export function photonUrl(q, near = [], base = PHOTON, bounded = false) {
   const p = new URLSearchParams({ q, limit: '1' });
   const pts = near.filter(ok);
+  if (pts.length && bounded) { const [l, t, r, b] = viewbox(near).split(','); p.set('bbox', [l, b, r, t].join(',')); }
   if (pts.length) { // 以已知地點的中心當作偏好位置
     p.set('lat', (pts.reduce((s, x) => s + x.lat, 0) / pts.length).toFixed(4));
     p.set('lon', (pts.reduce((s, x) => s + x.lng, 0) / pts.length).toFixed(4));
@@ -56,21 +58,25 @@ export function parsePhoton(json) {
 export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}, alts = []) {
   const queries = [...new Set([title, ...alts].map(queryFromTitle).filter(Boolean))];
   if (!queries.length) return null;
+  const hasNear = near.some(ok);
   let answered = false;
   let lastErr = null;
-  for (const q of queries) {
-    const providers = [
-      [nominatimUrl(q, near, bases.nominatim), parseNominatim],
-      [photonUrl(q, near, bases.photon), parsePhoton],
-    ];
-    for (const [url, parse] of providers) {
-      try {
-        const res = await fetchFn(url, { headers, signal: AbortSignal.timeout(5000) });
-        if (!res.ok) throw new Error(`geocode ${res.status}`);
-        answered = true;
-        const p = parse(await res.json());
-        if (p) return p;
-      } catch (e) { lastErr = e; }
+  // 先在已知地點附近找,找不到再放寬到全世界
+  for (const bounded of hasNear ? [true, false] : [false]) {
+    for (const q of queries) {
+      const providers = [
+        [nominatimUrl(q, near, bases.nominatim, bounded), parseNominatim],
+        [photonUrl(q, near, bases.photon, bounded), parsePhoton],
+      ];
+      for (const [url, parse] of providers) {
+        try {
+          const res = await fetchFn(url, { headers, signal: AbortSignal.timeout(5000) });
+          if (!res.ok) throw new Error(`geocode ${res.status}`);
+          answered = true;
+          const p = parse(await res.json());
+          if (p) return p;
+        } catch (e) { lastErr = e; }
+      }
     }
   }
   if (!answered) throw lastErr || new Error('geocode failed');
