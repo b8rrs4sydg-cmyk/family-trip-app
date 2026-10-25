@@ -349,11 +349,13 @@ async function handle(request, env) {
   // AI 排行程:指定過天數的項目(航班等)不動,其餘交給 AI 分天
   if (parts[3] === 'plan' && method === 'POST') {
     const { results } = await env.DB.prepare(
-      'SELECT id, name, lat, lng, day, time, kind, fixed FROM items WHERE trip_id = ?',
+      'SELECT id, name, lat, lng, day, time, kind, fixed, stay FROM items WHERE trip_id = ?',
     ).bind(tripId).all();
     const fixed = results.filter((r) => r.fixed && r.day > 0);
     const movable = results.filter((r) => !(r.fixed && r.day > 0));
-    const plan = await planTrip(env, movable, exists.days, fixed);
+    const body = await request.json().catch(() => ({}));
+    const instruction = clean(body.instruction, 300);
+    const plan = await planTrip(env, movable, exists.days, fixed, instruction);
     const byId = new Map(results.map((r) => [r.id, r]));
     const merged = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
     const layout = { 0: [] };
@@ -363,9 +365,17 @@ async function handle(request, env) {
     await env.DB.batch([
       ...layoutStatements(env, tripId, layout),
       env.DB.prepare('UPDATE trips SET tips = ? WHERE id = ?').bind(JSON.stringify(tips), tripId),
+      ...plan.stays.map((x) => env.DB.prepare('UPDATE items SET stay = ? WHERE id = ? AND trip_id = ?').bind(x.minutes, x.id, tripId)),
       bump(env, tripId),
     ]);
-    return json({ ok: true, usedAi: plan.usedAi });
+    // 使用者想要的主題而現有地點不夠時,AI 新增的地點(之後會自動查位置)
+    const added = [];
+    for (const a of plan.adds) {
+      await insertItem(env, tripId, exists.days, { name: a.name, day: a.day, kind: a.kind, who: 'AI' });
+      added.push({ name: a.name, day: a.day });
+    }
+    const nameOf = new Map(results.map((r) => [r.id, r.name]));
+    return json({ ok: true, usedAi: plan.usedAi, stays: plan.stays.map((x) => ({ name: nameOf.get(x.id), minutes: x.minutes })), added });
   }
 
   return fail('不支援的操作', 404);

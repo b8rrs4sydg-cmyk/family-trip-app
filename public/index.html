@@ -330,6 +330,16 @@
         <button class="btn accent" id="planBtn"><i data-i="sparkles"></i>AI 排行程</button>
         <button class="btn soft" id="sugBtn"><i data-i="bulb"></i>AI 推薦景點</button>
       </div>
+      <section class="card sugpanel hidden" id="planPanel">
+        <label class="lead" for="planText" style="font-weight:600;font-size:15px">有什麼想法嗎?(可以不填)</label>
+        <textarea class="field" id="planText" rows="2" maxlength="300" style="margin-top:8px;min-height:56px" placeholder="例如:第三天想逛街"></textarea>
+        <div class="examples">
+          <button class="example" type="button">第三天想逛街</button>
+          <button class="example" type="button">淺草寺想安排久一點</button>
+          <button class="example" type="button">每天不要排太滿</button>
+        </div>
+        <p style="margin-top:10px"><button class="btn accent block" id="planGo"><i data-i="sparkles"></i>開始排</button></p>
+      </section>
       <section class="card sugpanel hidden" id="sugPanel">
         <div class="row">
           <input class="field" id="sugQuery" style="flex:1 1 180px;width:auto" placeholder="想找什麼?(可不填)例如:拉麵、親子景點" maxlength="80" aria-label="想找什麼">
@@ -704,7 +714,7 @@ function rideEl(a, b) {
   if (r && r !== 'fail') {
     return el('div', { class: 'ride' }, el('b', {}, r.summary || '建議用導航查大眾運輸'),
       r.steps?.length ? el('div', {}, r.steps.map((x, i) => `${i + 1}. ${x}`).join('\n')) : null,
-      el('small', {}, 'AI 依地圖上的車站與路線整理,實際請以導航為準'));
+      el('small', {}, r.grounded === false ? 'AI 的建議(沒查到附近車站資料),請務必用導航確認' : 'AI 依地圖上的車站與路線整理,實際請以導航為準'));
   }
   return el('div', { class: 'ride' }, r === 'fail' ? '搭法暫時查不到,請按「怎麼去」看導航' : '正在查要搭什麼車…');
 }
@@ -712,7 +722,7 @@ function pumpRides() {
   while (rideBusy.size < 2 && rideQueue.length) {
     const j = rideQueue.shift(); const k = rideKey(j.a, j.b); rideBusy.add(k);
     api('POST', `/${tripId}/transit`, { from: { lat: j.a.lat, lng: j.a.lng, name: j.a.name }, to: { lat: j.b.lat, lng: j.b.lng, name: j.b.name } })
-      .then((r) => rides.set(k, { summary: r.summary, steps: r.steps }))
+      .then((r) => rides.set(k, { summary: r.summary, steps: r.steps, grounded: r.grounded }))
       .catch(() => rides.set(k, 'fail'))
       .finally(() => {
         rideBusy.delete(k);
@@ -1383,7 +1393,7 @@ function showTrip() {
     };
   } else $('pasteBtn').classList.add('hidden');
 
-  $('sugBtn').onclick = () => { $('sugPanel').classList.toggle('hidden'); if (!$('sugPanel').classList.contains('hidden')) $('sugQuery').focus(); };
+  $('sugBtn').onclick = () => { $('planPanel').classList.add('hidden'); $('sugPanel').classList.toggle('hidden'); if (!$('sugPanel').classList.contains('hidden')) $('sugQuery').focus(); };
   $('sugGo').onclick = async () => {
     const b = $('sugGo'); b.disabled = true; b.textContent = '想一想…';
     try {
@@ -1393,13 +1403,24 @@ function showTrip() {
     b.disabled = false; b.textContent = '推薦';
   };
 
-  $('planBtn').onclick = async () => {
+  $('planBtn').onclick = () => {
     if (!trip.items.length) { toast('請先加入一些地點', true); return; }
+    $('sugPanel').classList.add('hidden');
+    $('planPanel').classList.toggle('hidden');
+    if (!$('planPanel').classList.contains('hidden')) $('planText').focus();
+  };
+  $('planPanel').querySelectorAll('.example').forEach((x) => { x.onclick = () => { $('planText').value = x.textContent; $('planText').focus(); }; });
+  $('planGo').onclick = async () => {
     if (trip.items.some((i) => i.day > 0 && !i.fixed) && !confirm('這會重新排列沒有指定天數的地點,確定嗎?')) return;
-    const b = $('planBtn'); const old = b.innerHTML; b.textContent = '排行程中…'; b.disabled = true;
+    const instruction = $('planText').value.trim();
+    const b = $('planGo'); const old = b.innerHTML; b.textContent = '排行程中…'; b.disabled = true;
     await run(async () => {
-      const r = await api('POST', `/${tripId}/plan`);
-      toast(r.usedAi ? 'AI 排好了,可以再手動調整' : 'AI 暫時沒回應,已先依距離幫你排好');
+      const r = await api('POST', `/${tripId}/plan`, { instruction });
+      $('planPanel').classList.add('hidden'); $('planText').value = '';
+      const notes = [];
+      for (const x of r.stays || []) notes.push(`「${x.name}」停留改成 ${fmtMin(x.minutes)}`);
+      for (const x of r.added || []) notes.push(`第 ${x.day} 天加了「${x.name}」`);
+      toast(r.usedAi ? ['AI 排好了,可以再手動調整', ...notes].join('\n') : 'AI 暫時沒回應,已先依距離幫你排好(你的想法沒有套用,請稍後再試)');
     });
     b.innerHTML = old; b.disabled = false; hydrateIcons(b);
   };

@@ -85,7 +85,7 @@ export async function transitAdvice(env, { from, to }, fetchFn = fetch) {
   for (const extra of [{ response_format: { type: 'json_schema', json_schema: SCHEMA } }, {}]) {
     try {
       const r = normalizeTransit(parseAiResponse(await env.AI.run(env.AI_MODEL, { ...base, ...extra })));
-      if (r) return { ...r, from: nf.stations[0]?.name || null, to: nt.stations[0]?.name || null };
+      if (r) return { ...r, from: nf.stations[0]?.name || null, to: nt.stations[0]?.name || null, grounded: nf.stations.length > 0 && nt.stations.length > 0 };
     } catch (e) { console.error('AI transit failed', e); }
   }
   return null;

@@ -65,3 +65,15 @@ test('planTrip 沒有地點時不呼叫 AI', async () => {
   const r = await planTrip(env, [], 3);
   assert.deepEqual(r.days, [[], [], []]);
 });
+
+test('normalizePlan: 驗證 AI 的停留時間與新增地點', () => {
+  const items = [{ id: 'a', name: '淺草寺' }, { id: 'b', name: '東京鐵塔' }];
+  const raw = {
+    days: [['a'], ['b'], []], tips: [],
+    stays: [{ id: 'a', minutes: 120 }, { id: 'zzz', minutes: 60 }, { id: 'b', minutes: 5 }, { id: 'a', minutes: 90 }],
+    adds: [{ name: '淺草寺', day: 1, kind: 'place' }, { name: '澀谷 109', day: 3, kind: 'place' }, { name: '銀座', day: 9, kind: 'place' }, { name: '表參道', day: 3, kind: 'x' }],
+  };
+  const r = normalizePlan(raw, items, 3);
+  assert.deepEqual(r.stays, [{ id: 'a', minutes: 120 }]);
+  assert.deepEqual(r.adds.map((x) => [x.name, x.day, x.kind]), [['澀谷 109', 3, 'place'], ['表參道', 3, 'place']]);
+});
