@@ -44,11 +44,12 @@ export function suggestStay(name = '', kind = 'place') {
   return 90;
 }
 
-// "HH:MM" 加上分鐘(同一天內,超過午夜就停在 23:59)
+// "HH:MM" 加上分鐘(同一天內;超過午夜就回傳 null,不顯示錯的時間)
 export function addMinutes(time, min) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(time || '');
   if (!m || !Number.isFinite(min)) return null;
-  const t = Math.min(23 * 60 + 59, +m[1] * 60 + +m[2] + Math.round(min));
+  const t = +m[1] * 60 + +m[2] + Math.round(min);
+  if (t > 23 * 60 + 59) return null;
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 

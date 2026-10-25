@@ -51,20 +51,19 @@ export function parseOverpass(json, point) {
 
 export async function nearbyTransit(point, fetchFn = fetch) {
   const q = `[out:json][timeout:10];node(around:1000,${point.lat},${point.lng})[railway~"^(station|halt)$"]->.s;.s out body;rel(bn.s)[type=route][route~"^(subway|train|light_rail|monorail)$"];out tags;`;
-  const errs = [];
-  for (const base of OVERPASS) {
-    try {
-      const res = await fetchFn(base, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA },
-        body: `data=${encodeURIComponent(q)}`,
-        signal: AbortSignal.timeout(4500),
-      });
-      if (!res.ok) throw new Error(`overpass ${res.status}`);
-      return parseOverpass(await res.json(), point);
-    } catch (e) { console.error('overpass failed', e); errs.push(`${new URL(base).host}: ${e.message}`); }
-  }
-  return { stations: [], lines: [], err: errs.join('; ') };
+  const one = async (base) => {
+    const res = await fetchFn(base, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA },
+      body: `data=${encodeURIComponent(q)}`,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`${new URL(base).host} ${res.status}`);
+    return parseOverpass(await res.json(), point);
+  };
+  // 幾個鏡像同時問,誰先答就用誰(單一鏡像常常忙線)
+  try { return await Promise.any(OVERPASS.map(one)); }
+  catch (e) { console.error('overpass failed', e); return { stations: [], lines: [], err: (e.errors || [e]).map((x) => x.message).join('; ') }; }
 }
 
 // AI 有時會填入 null、無、N/A 這類字串;視為沒有內容
