@@ -25,7 +25,7 @@ export function viewbox(points, pad = 2) {
 
 // bounded:只在已知地點附近找(找不到再放寬),避免「Sanrio Puroland」這種英文名跑到別的城市
 export function nominatimUrl(q, near = [], base = NOMINATIM, bounded = false) {
-  const p = new URLSearchParams({ q, format: 'jsonv2', limit: '1', 'accept-language': 'zh-TW' });
+  const p = new URLSearchParams({ q, format: 'jsonv2', limit: '1', namedetails: '1', 'accept-language': 'zh-TW' });
   const vb = viewbox(near);
   if (vb) { p.set('viewbox', vb); if (bounded) p.set('bounded', '1'); }
   return `${base}/search?${p}`;
@@ -44,14 +44,26 @@ export function photonUrl(q, near = [], base = PHOTON, bounded = false) {
 
 export function parseNominatim(json) {
   const hit = Array.isArray(json) ? json[0] : null;
-  const p = { lat: Number(hit?.lat), lng: Number(hit?.lon) };
+  const p = { lat: Number(hit?.lat), lng: Number(hit?.lon), text: [hit?.display_name, hit?.name, ...Object.values(hit?.namedetails || {})].filter(Boolean).join(' ') };
   return ok(p) ? p : null;
 }
 
 export function parsePhoton(json) {
-  const c = json?.features?.[0]?.geometry?.coordinates;
-  const p = { lat: Number(c?.[1]), lng: Number(c?.[0]) };
+  const f = json?.features?.[0];
+  const c = f?.geometry?.coordinates;
+  const p = { lat: Number(c?.[1]), lng: Number(c?.[0]), text: Object.values(f?.properties || {}).filter((v) => typeof v === 'string').join(' ') };
   return ok(p) ? p : null;
+}
+
+// 地圖服務對查不到的名稱常會亂猜一個「長得有點像」的地點。中日文名稱至少要有連續兩個字出現在結果裡才採用;
+// 英文名稱(結果多半是日文名)無法比對,照單全收。
+export function relevant(query, text) {
+  const q = String(query).replace(/\s+/g, '');
+  if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(q)) return true;
+  const t = String(text || '').replace(/\s+/g, '');
+  if (!t) return true;
+  for (let i = 0; i + 1 < q.length; i++) if (t.includes(q.slice(i, i + 2))) return true;
+  return false;
 }
 
 // 依序試各個服務。有任何一個「回答了」(即使是查無)就算查過;全部都失敗(網路、限流)才丟錯。
@@ -74,7 +86,7 @@ export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}
           if (!res.ok) throw new Error(`geocode ${res.status}`);
           answered = true;
           const p = parse(await res.json());
-          if (p) return p;
+          if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng };
         } catch (e) { lastErr = e; }
       }
     }
