@@ -6,6 +6,7 @@ import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from '
 import { geocode } from './geocode.js';
 import { suggestPlaces } from './suggest.js';
 import { computeRoute, MODES, validPoint, sanitizeDeparture } from './route.js';
+import { translateText, translateImage, DIRECTIONS, IMAGE_RE, MAX_IMAGE_CHARS } from './translate.js';
 
 const MAX_ITEMS = 80;
 const ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789'; // 去掉容易混淆的 l o 0 1
@@ -283,6 +284,26 @@ async function handle(request, env) {
       await cache.put(key, new Response(JSON.stringify(result), { headers: { 'cache-control': `max-age=${departure || result.source === 'osrm' ? 3600 : 600}` } }));
     }
     return json(result);
+  }
+
+  // 翻譯:文字(中↔日)
+  if (parts[3] === 'translate' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const text = clean(body.text, 500);
+    if (!text) return fail('請先輸入要翻譯的內容');
+    const direction = DIRECTIONS.includes(body.direction) ? body.direction : 'zh2ja';
+    const r = await translateText(env, text, direction);
+    return r ? json(r) : fail('翻譯暫時失敗,請稍後再試;常用的句子可以直接點「說給對方看」的句子', 503);
+  }
+
+  // 翻譯:照片(菜單、招牌 → 繁體中文)
+  if (parts[3] === 'translate-image' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const image = String(body.image ?? '');
+    if (image.length > MAX_IMAGE_CHARS) return fail('照片太大了,請再拍一次或換小一點的照片');
+    if (!IMAGE_RE.test(image)) return fail('照片格式不支援(請用 JPG、PNG 或 WebP)');
+    const r = await translateImage(env, image);
+    return r ? json(r) : fail('看不清楚這張照片,請靠近一點、光線亮一點再拍一次', 422);
   }
 
   // AI 排行程:指定過天數的項目(航班等)不動,其餘交給 AI 分天
