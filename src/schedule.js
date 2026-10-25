@@ -1,3 +1,4 @@
+import { haversineKm } from '../public/geo.js';
 // 決定新項目在某一天裡的位置。純函式,方便測試。
 //
 // 規則(使用者之後都可以用 ↑↓ 微調):
@@ -45,4 +46,29 @@ export function mergeFixed(days, fixed) {
     d.splice(insertIndex(d, f, f.day, out.length), 0, f);
   }
   return out;
+}
+
+export // 把一個還沒排的地點插進「最順路」的一天與位置:找出讓路線多繞最少的地方,並稍微避免全擠在同一天。
+// dayLists:[[item,...]...](第 1 天起,已排好的項目,含指定天數的航班等)。有座標的才比較距離,沒座標的放進最少的那天最後。
+function insertNearest(dayLists, item) {
+  const hasXY = (x) => x && Number.isFinite(x.lat) && Number.isFinite(x.lng);
+  if (!hasXY(item)) {
+    const d = dayLists.reduce((m, l, i) => (l.length < dayLists[m].length ? i : m), 0);
+    dayLists[d].push(item);
+    return;
+  }
+  let best = null;
+  dayLists.forEach((list, d) => {
+    const pts = list.map((x, i) => ({ x, i })).filter((p) => hasXY(p.x));
+    // 這一天沒有任何有座標的項目:只算人數(很空的天優先)
+    if (!pts.length) { const c = 3 + list.length * 0.8; if (!best || c < best.c) best = { c, d, i: list.length }; return; }
+    for (let k = 0; k <= pts.length; k++) {
+      const prev = pts[k - 1]?.x, next = pts[k]?.x;
+      const detour = prev && next ? haversineKm(prev, item) + haversineKm(item, next) - haversineKm(prev, next) : haversineKm(prev || next, item);
+      const c = detour + list.length * 0.8;
+      const at = k === pts.length ? list.length : pts[k].i; // 插在第 k 個有座標項目之前
+      if (!best || c < best.c) best = { c, d, i: at };
+    }
+  });
+  dayLists[best.d].splice(best.i, 0, item);
 }

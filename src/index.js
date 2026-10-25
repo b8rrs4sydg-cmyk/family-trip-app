@@ -1,7 +1,7 @@
 import { importPlace, extractUrl, splitAddress } from './maps.js';
 import { planTrip } from './plan.js';
 import { ensureSchema } from './schema.js';
-import { insertIndex, mergeFixed } from './schedule.js';
+import { insertIndex, mergeFixed, insertNearest } from './schedule.js';
 import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from './nl.js';
 import { geocode } from './geocode.js';
 import { suggestStay } from '../public/geo.js';
@@ -123,24 +123,45 @@ async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0) {
 const isLodgingCopy = (r) => r.added_by === AI_LODGING || (r.added_by === COPY_MARK && isLodging(r));
 
 // 算出 AI 的排法(不寫入)。回傳的 days 每一格是:{id}(現有項目)、{copyOf,label}(住宿副本)、{add:{name,kind}}(AI 新增的地點)
-async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds) {
+// 算出 AI 的排法(不寫入)。回傳的 days 每一格是:{id}(現有項目)、{copyOf,label}(住宿副本)、{add:{name,kind}}(AI 新增的地點)
+// scope:
+//   new    (預設,沒有想法時):已排在某天的項目一律不動;只把「還沒安排」的地點插進最順路的一天。
+//   adjust (有想法時):以目前排法為草稿請 AI 調整,沒被提到的盡量不動。
+//   all    (使用者明確要求重排整個行程):AI 重新分天。
+async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, scopeIn) {
   const { results } = await env.DB.prepare(
-    'SELECT id, name, lat, lng, day, time, kind, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
+    'SELECT id, name, lat, lng, day, position, time, kind, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
   ).bind(tripId).all();
   const real = results.filter((r) => !isLodgingCopy(r));
   const hotels = real.filter((r) => isLodging(r));
   const fixed = real.filter((r) => r.fixed && r.day > 0 && !isLodging(r));
   const movable = real.filter((r) => !(r.fixed && r.day > 0) && !isLodging(r));
-  const movableIds = new Set(movable.map((m) => m.id));
-  const cleanDraft = draft ? draft.map((d) => d.filter((id) => movableIds.has(id))) : null;
-  const plan = await planTrip(env, movable, nDays, fixed, instruction, hotels, cleanDraft && cleanDraft.some((d) => d.length) ? cleanDraft : null);
-  // 沒有輸入想法時,不套用 AI 擅自改的停留時間與新增的地點(避免蓋掉使用者自己設的值)
-  if (!instruction) { plan.stays = []; plan.adds = []; }
+  const nonHotel = real.filter((r) => !isLodging(r));
+  const placed = nonHotel.filter((r) => r.day > 0);
   const byId = new Map(real.map((r) => [r.id, r]));
-  const merged = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
   const lp = lodgingPlan(hotels.map((h) => ({ id: h.id, day: h.day })), nDays);
   const entry = (sp, label) => (sp.copy ? { copyOf: sp.hotel.id, label } : { id: sp.hotel.id });
-  const days = merged.map((items, i) => [
+  const movableIds = new Set(movable.map((m) => m.id));
+  const cleanDraft = draft ? draft.map((d) => d.filter((id) => movableIds.has(id))) : null;
+  const hasDraft = cleanDraft && cleanDraft.some((d) => d.length);
+  // 目前的排法(每天依順序),當作預設的草稿
+  const currentByDay = Array.from({ length: nDays }, () => []);
+  for (const r of [...placed].sort((a, b) => a.position - b.position)) if (r.day <= nDays) currentByDay[r.day - 1].push(r);
+  let scope = scopeIn === 'all' ? 'all' : instruction || hasDraft ? 'adjust' : 'new';
+  if (scope === 'new' && !placed.length) scope = 'all'; // 還沒有任何排好的:整個重新排才有意義
+
+  let lists, plan = { tips: [], stays: [], adds: [], usedAi: true };
+  if (scope === 'new') {
+    lists = currentByDay.map((l) => [...l]);
+    for (const it of nonHotel.filter((r) => r.day === 0)) insertNearest(lists, it);
+  } else {
+    const useDraft = scope === 'adjust' ? (hasDraft ? cleanDraft : currentByDay.map((l) => l.filter((x) => movableIds.has(x.id)).map((x) => x.id))) : null;
+    plan = await planTrip(env, movable, nDays, fixed, instruction, hotels, useDraft && useDraft.some((d) => d.length) ? useDraft : null);
+    // 沒有輸入想法時,不套用 AI 擅自改的停留時間與新增的地點(避免蓋掉使用者自己設的值)
+    if (!instruction) { plan.stays = []; plan.adds = []; }
+    lists = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
+  }
+  const days = lists.map((items, i) => [
     ...lp.head[i].map((sp) => entry(sp, '從住宿出發')),
     ...items.map((x) => ({ id: x.id })),
     ...lp.tail[i].map((sp) => entry(sp, '回住宿休息')),
@@ -157,7 +178,7 @@ async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds) 
   }
   const nameOf = new Map(real.map((r) => [r.id, r.name]));
   return {
-    days, tips: plan.tips, usedAi: plan.usedAi, lodging: hotels.length ? hotels[0].name : null,
+    days, tips: plan.tips, keepTips: scope === 'new', scope, newCount: scope === 'new' ? nonHotel.filter((r) => r.day === 0).length : undefined, usedAi: plan.usedAi, lodging: hotels.length ? hotels[0].name : null,
     stays: plan.stays.map((x) => ({ id: x.id, name: nameOf.get(x.id), minutes: x.minutes })),
   };
 }
@@ -198,14 +219,15 @@ async function applyProposal(env, tripId, nDays, body) {
   }
   layout[0] = real.filter((r) => !placed.has(r.id)).map((r) => r.id); // 沒被安排到的留在「還沒安排」
   const tips = {};
-  (Array.isArray(body.tips) ? body.tips : []).slice(0, nDays).forEach((t, i) => { const v = clean(t, 80); if (v) tips[i + 1] = v; });
+  const setTips = Array.isArray(body.tips); // body.tips 為 null:沿用目前每天的提醒
+  if (setTips) body.tips.slice(0, nDays).forEach((t, i) => { const v = clean(t, 80); if (v) tips[i + 1] = v; });
   const stays = (Array.isArray(body.stays) ? body.stays : []).filter((x) => byId.has(x?.id) && Number(x.minutes) >= 15 && Number(x.minutes) <= 720);
   await env.DB.batch([
     ...oldCopies.map((c) => env.DB.prepare('DELETE FROM items WHERE id = ? AND trip_id = ?').bind(c.id, tripId)),
     ...inserts,
     ...real.filter((r) => isLodging(r) && r.kind !== 'hotel').map((h) => env.DB.prepare("UPDATE items SET kind = 'hotel' WHERE id = ? AND trip_id = ?").bind(h.id, tripId)),
     ...layoutStatements(env, tripId, layout),
-    env.DB.prepare('UPDATE trips SET tips = ? WHERE id = ?').bind(JSON.stringify(tips), tripId),
+    ...(setTips ? [env.DB.prepare('UPDATE trips SET tips = ? WHERE id = ?').bind(JSON.stringify(tips), tripId)] : []),
     ...stays.map((x) => env.DB.prepare('UPDATE items SET stay = ? WHERE id = ? AND trip_id = ?').bind(Math.round(Number(x.minutes)), x.id, tripId)),
     bump(env, tripId),
   ]);
@@ -501,7 +523,7 @@ async function handle(request, env) {
     const instruction = clean(body.instruction, 300);
     const draft = Array.isArray(body.draft) ? body.draft.slice(0, exists.days).map((d) => (Array.isArray(d) ? d.filter((x) => typeof x === 'string').slice(0, 100) : [])) : null;
     const adds = Array.isArray(body.draftAdds) ? body.draftAdds.slice(0, 6) : [];
-    return json(await buildProposal(env, tripId, exists.days, instruction, draft, adds));
+    return json(await buildProposal(env, tripId, exists.days, instruction, draft, adds, body.scope));
   }
   if (parts[3] === 'plan' && parts.length === 5 && parts[4] === 'apply' && method === 'POST') {
     const body = await request.json().catch(() => ({}));
@@ -512,7 +534,7 @@ async function handle(request, env) {
   if (parts[3] === 'plan' && parts.length === 4 && method === 'POST') {
     const body = await request.json().catch(() => ({}));
     const instruction = clean(body.instruction, 300);
-    const prop = await buildProposal(env, tripId, exists.days, instruction, null, []);
+    const prop = await buildProposal(env, tripId, exists.days, instruction, null, [], body.scope);
     const r = await applyProposal(env, tripId, exists.days, { days: prop.days, tips: prop.tips, stays: prop.stays.map((x) => ({ id: x.id, minutes: x.minutes })) });
     return r.error ? fail(r.error) : json({ ok: true, usedAi: prop.usedAi, lodging: prop.lodging, stays: prop.stays.map((x) => ({ name: x.name, minutes: x.minutes })), added: r.added });
   }
