@@ -294,6 +294,44 @@
   .it.pressing .card { transform: scale(.985); box-shadow: 0 0 0 1.5px var(--primary); }
   .day.dragover .dayhead h2 { color: var(--primary); }
   .tl.temp { min-height: 64px; }
+
+  /* ---------- AI 排行程預覽 ---------- */
+  dialog#pv[open] { inset: 0; width: 100%; height: 100%; animation: none; display: block; background: var(--bg); }
+  .pv { height: 100dvh; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; padding: calc(10px + env(safe-area-inset-top)) 16px calc(10px + env(safe-area-inset-bottom)); gap: 10px; }
+  .pv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .pv-head h3 { font-size: 18px; font-weight: 700; }
+  .pv-head .hint { margin-top: 2px; }
+  .pv-tabs { display: none; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border-radius: 10px; background: var(--fill); }
+  .pv-tabs button { min-height: 32px; border-radius: 8px; border: 0; background: transparent; font-weight: 600; font-size: 14px; cursor: pointer; color: var(--muted); }
+  .pv-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .pv-body { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; overscroll-behavior: contain; }
+  .pv-col h4 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px; position: sticky; top: 0; background: var(--bg); padding: 4px 0; z-index: 2; }
+  .pv-col h4 small { font-weight: 400; }
+  #pvColNow { opacity: .8; }
+  .pv .day { margin-top: 14px; animation: none; }
+  .pv .dayhead h2 { font-size: 15px; }
+  .pv .daybadge { width: 24px; height: 24px; font-size: 12px; border-radius: 7px; }
+  .pv .it { grid-template-columns: 24px 1fr; column-gap: 6px; }
+  .pv .num { width: 20px; height: 20px; font-size: 11px; margin-top: 9px; }
+  .pv .item { padding: 7px 4px 7px 10px; margin: 3px 0; }
+  .pv .name { font-size: 14px; }
+  .pv .tl { margin-top: 4px; }
+  .pv .tl:empty::after, .pv .tl.temp:empty::after { content: "(這天沒有項目,可以拖到這裡)"; display: block; padding: 10px; border-radius: 10px; background: var(--fill); color: var(--muted); font-size: 12px; }
+  .pv .tip { margin: 6px 0 0 30px; font-size: 12px; padding: 6px 10px; }
+  .pvbadge { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 7px; border-radius: 999px; line-height: 18px; background: var(--primary-soft); color: var(--primary); }
+  .pvbadge.new { background: rgba(48, 164, 108, .16); color: #1f8a57; }
+  .pvbadge.moved { background: var(--accent-soft); color: var(--accent-text); }
+  .pv-chat { display: flex; gap: 8px; align-items: flex-end; }
+  .pv-chat textarea { min-height: 38px; resize: none; flex: 1; }
+  .pv-actions { display: flex; gap: 8px; }
+  .pv-actions .btn { flex: 1; min-height: 42px; }
+  .pv-loading { padding: 24px 8px; color: var(--muted); font-size: 14px; text-align: center; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (max-width: 759px) {
+    .pv-tabs { display: grid; }
+    .pv-body { grid-template-columns: 1fr; }
+    #pv[data-tab="new"] #pvColNow, #pv[data-tab="now"] #pvColNew { display: none; }
+  }
   @media (max-width: 380px) { .sheet .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -480,6 +518,32 @@
   </form>
 </dialog>
 
+<!-- AI 排行程:前後對照 -->
+<dialog id="pv" aria-labelledby="pvTitle">
+  <div class="pv">
+    <header class="pv-head">
+      <div><h3 id="pvTitle">AI 排行程預覽</h3><p class="hint" id="pvSummary">還沒套用,先看看 AI 的建議。</p></div>
+      <button class="icon-btn" type="button" id="pvClose" aria-label="取消,不套用"><i data-i="close" data-s="22"></i></button>
+    </header>
+    <div class="pv-tabs" role="tablist">
+      <button type="button" id="pvTabNew" role="tab" aria-selected="true">AI 建議</button>
+      <button type="button" id="pvTabNow" role="tab" aria-selected="false">目前</button>
+    </div>
+    <div class="pv-body" id="pvBody">
+      <section class="pv-col" id="pvColNow" aria-label="目前的行程"><h4>目前</h4><div id="pvNow"></div></section>
+      <section class="pv-col" id="pvColNew" aria-label="AI 建議的行程"><h4>AI 建議 <small>(可以拖曳調整)</small></h4><div id="pvNew"></div></section>
+    </div>
+    <div class="pv-chat">
+      <textarea class="field" id="pvText" rows="1" maxlength="300" aria-label="告訴 AI 要怎麼調整" placeholder="想怎麼調整?例:第三天想逛街"></textarea>
+      <button class="btn soft" type="button" id="pvRefine"><i data-i="sparkles"></i>重新排</button>
+    </div>
+    <div class="pv-actions">
+      <button class="btn" type="button" id="pvCancel">取消</button>
+      <button class="btn primary" type="button" id="pvApply">套用這個排法</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- 翻譯 -->
 <dialog id="tr" aria-labelledby="trTitle">
   <form method="dialog" class="sheet">
@@ -569,6 +633,7 @@ const ICONS = {
   walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="M9 21l2-6-2-2 1-5 3-1 2 4h3M11 15l3 2v4M10 8l-3 2"/>',
   train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l2-4M15 21l-2-4"/><circle cx="9" cy="14" r=".6"/><circle cx="15" cy="14" r=".6"/>',
   car: '<path d="M4 16v-4l2-5h12l2 5v4M4 16h16M4 16v2h3v-2M17 16v2h3v-2"/><circle cx="8" cy="13" r=".6"/><circle cx="16" cy="13" r=".6"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   tag: '<path d="M3 12V3h9l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.3"/>',
 };
@@ -970,7 +1035,7 @@ function render() {
     const arr = g[day];
     const dateLabel = day > 0 ? dayDateLabel(trip.start_date, day) : null;
     const sum = arr.reduce((s, i) => s + (i.cost || 0), 0);
-    const sec = el('section', { class: firstRender ? 'day first' : 'day', id: `day-${day}`, 'aria-label': day === 0 ? '還沒安排' : `第 ${day} 天`, style: `--c:${dayColor(day)}` },
+    const sec = el('section', { class: firstRender ? 'day first' : 'day', id: `day-${day}`, 'data-day': String(day), 'aria-label': day === 0 ? '還沒安排' : `第 ${day} 天`, style: `--c:${dayColor(day)}` },
       el('div', { class: 'dayhead' },
         el('div', { class: 'daybadge', 'aria-hidden': 'true' }, day === 0 ? icon('tag', 16) : String(day)),
         el('div', {},
@@ -1060,10 +1125,10 @@ async function undoPlan(snapshot) {
 let drag = null;
 
 // 把目前畫面上的排列(DOM 順序)轉成 [[id...]...](第 0 天起)
-function domLayout() {
-  const out = Array.from({ length: trip.days + 1 }, () => []);
-  document.querySelectorAll('#days .day').forEach((sec) => {
-    const d = Number(sec.id.replace('day-', ''));
+function domLayout(root = $('days'), n = trip.days) {
+  const out = Array.from({ length: n + 1 }, () => []);
+  root.querySelectorAll('.day').forEach((sec) => {
+    const d = Number(sec.dataset.day ?? sec.id.replace('day-', ''));
     sec.querySelectorAll('.tl > .it[data-id]').forEach((li) => out[d].push(li.dataset.id));
   });
   return out;
@@ -1080,8 +1145,8 @@ function applyLayout(layout, flashId) {
 }
 
 // FLIP:元素換位置時,從舊位置滑到新位置
-function flipRows(mutate) {
-  const rows = [...document.querySelectorAll('#days .it[data-id]')].filter((r) => !r.classList.contains('ghost'));
+function flipRows(mutate, root = $('days')) {
+  const rows = [...root.querySelectorAll('.it[data-id]')].filter((r) => !r.classList.contains('ghost'));
   const before = new Map(rows.map((r) => [r, r.getBoundingClientRect().top]));
   mutate();
   for (const r of rows) {
@@ -1093,6 +1158,7 @@ function flipRows(mutate) {
 const LONGPRESS_MS = 320;
 // 按住握把立刻拖;手機上也可以「長按整張卡片」開始拖(不長按就是正常捲動)
 function startDrag(e, it, opts = {}) {
+  const root = opts.root || $('days');
   if (busy || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
   if (!opts.hold) e.preventDefault();
   const li = e.currentTarget.closest('.it');
@@ -1105,12 +1171,12 @@ function startDrag(e, it, opts = {}) {
     const ghost = li.cloneNode(true);
     ghost.classList.add('ghost'); ghost.classList.remove('pressing', 'enter');
     ghost.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;`;
-    document.body.append(ghost);
+    (root.closest('dialog') || document.body).append(ghost);
     // 把「變成空位」放在 ghost 建好之後,這樣 ghost 保留原本的樣子
-    flipRows(() => { li.classList.add('placeholder'); document.body.classList.add('dragging'); });
+    flipRows(() => { li.classList.add('placeholder'); document.body.classList.add('dragging'); }, root);
     navigator.vibrate?.(12);
     // 沒有項目的天,放一個臨時的清單,才能拖進去
-    document.querySelectorAll('#days .day').forEach((sec) => {
+    root.querySelectorAll('.day').forEach((sec) => {
       if (!sec.querySelector('.tl')) { sec.querySelector('.empty')?.classList.add('hidden'); sec.append(el('ol', { class: 'tl temp' })); }
     });
     drag = { id: it.id, li, ghost, rect, offY: startY - rect.top, offX: startX - rect.left, scrollV: 0, raf: 0, pending: false };
@@ -1126,24 +1192,26 @@ function startDrag(e, it, opts = {}) {
     if (!drag) return;
     drag.ghost.style.top = `${lastY - drag.offY}px`;
     drag.ghost.style.left = `${drag.rect.left + (lastX - startX) * 0.06}px`;
-    const secs = [...document.querySelectorAll('#days .day')];
+    const secs = [...root.querySelectorAll('.day')];
     let sec = secs.find((x) => lastY < x.getBoundingClientRect().bottom) || secs[secs.length - 1];
     if (!sec) return;
     let ol = sec.querySelector('.tl');
     const rows = [...ol.querySelectorAll(':scope > .it[data-id]')].filter((r) => r !== drag.li);
     const ref = rows.find((r) => { const b = r.getBoundingClientRect(); return lastY < b.top + b.height / 2; }) || null;
     if (drag.li.parentElement === ol && drag.li.nextElementSibling === ref) return;
-    flipRows(() => ol.insertBefore(drag.li, ref));
-    document.querySelectorAll('#days .day').forEach((x) => x.classList.toggle('dragover', x === sec));
+    flipRows(() => ol.insertBefore(drag.li, ref), root);
+    root.querySelectorAll('.day').forEach((x) => x.classList.toggle('dragover', x === sec));
     navigator.vibrate?.(4);
   };
 
   // 手指停在畫面邊緣時持續捲動
   const tick = () => {
     if (!drag) return;
-    const top = Math.max(110, (document.querySelector('.sticky')?.getBoundingClientRect().bottom || 0) + 24), bottom = innerHeight - (innerWidth < 980 ? 100 : 70);
+    const sr = opts.scroller?.getBoundingClientRect();
+    const top = sr ? sr.top + 50 : Math.max(110, (document.querySelector('.sticky')?.getBoundingClientRect().bottom || 0) + 24);
+    const bottom = sr ? sr.bottom - 60 : innerHeight - (innerWidth < 980 ? 100 : 70);
     drag.scrollV = lastY < top ? -Math.ceil((top - lastY) / 8) : lastY > bottom ? Math.ceil((lastY - bottom) / 8) : 0;
-    if (drag.scrollV) { window.scrollBy(0, Math.max(-22, Math.min(22, drag.scrollV))); place(); }
+    if (drag.scrollV) { (opts.scroller || window).scrollBy(0, Math.max(-22, Math.min(22, drag.scrollV))); place(); }
     drag.raf = requestAnimationFrame(tick);
   };
 
@@ -1170,15 +1238,16 @@ function startDrag(e, it, opts = {}) {
     if (!drag) { cancelHold(); return; }
     const d = drag; drag = null; lastDragEnd = performance.now();
     cancelAnimationFrame(d.raf);
-    const layout = domLayout();
+    const layout = domLayout(root, opts.days);
     const slot = d.li.getBoundingClientRect();
     const done = () => {
       d.ghost.remove();
       document.body.classList.remove('dragging');
-      document.querySelectorAll('#days .day').forEach((x) => x.classList.remove('dragover'));
-      document.querySelectorAll('#days .tl.temp').forEach((x) => x.remove());
-      document.querySelectorAll('#days .empty.hidden').forEach((x) => x.classList.remove('hidden'));
+      root.querySelectorAll('.day').forEach((x) => x.classList.remove('dragover'));
+      root.querySelectorAll('.tl.temp').forEach((x) => x.remove());
+      root.querySelectorAll('.empty.hidden').forEach((x) => x.classList.remove('hidden'));
       d.li.classList.remove('placeholder');
+      if (opts.onDrop) { navigator.vibrate?.(10); opts.onDrop(cancelled ? null : layout, d.id); return; }
       const before = groups().map((arr) => arr.map((x) => x.id).join());
       const same = layout.every((ids, i) => ids.join() === before[i]);
       if (cancelled || same) { render(); return; }
@@ -1196,6 +1265,144 @@ function startDrag(e, it, opts = {}) {
   window.addEventListener('pointercancel', onCancel);
   if (opts.hold) { li.classList.add('pressing'); holdTimer = setTimeout(() => { li.classList.remove('pressing'); begin(); }, LONGPRESS_MS); }
   else begin();
+}
+
+
+// ================= AI 排行程:前後對照 =================
+// 流程:按「開始排」→ 向伺服器要一份建議(不寫入)→ 左邊目前、右邊建議,可以拖曳、也可以打字請 AI 再調 → 確認後才套用。
+const pv = { days: [], entries: new Map(), tips: [], stays: new Map(), usedAi: true, tab: 'new', busy: false, seq: 1 };
+
+function pvLoad(res) {
+  pv.entries.clear(); pv.seq = 1;
+  pv.days = res.days.map((d) => d.map((e) => {
+    const key = e.id || `${e.copyOf ? 'c' : 'a'}${pv.seq++}`;
+    pv.entries.set(key, e);
+    return key;
+  }));
+  pv.tips = res.tips || [];
+  for (const x of res.stays || []) pv.stays.set(x.id, x.minutes);
+  pv.usedAi = res.usedAi;
+}
+
+function pvInfo(key) {
+  const e = pv.entries.get(key);
+  const find = (id) => trip.items.find((i) => i.id === id);
+  if (e.id) { const it = find(e.id); return { it, name: it?.name || '(已刪除)', kind: it?.kind || 'place', stay: pv.stays.get(e.id) ?? it?.stay, stayChanged: pv.stays.has(e.id) && pv.stays.get(e.id) !== it?.stay, orig: it?.day }; }
+  if (e.copyOf) { const it = find(e.copyOf); return { it, name: it?.name || '住宿', kind: 'hotel', badge: e.label, tmp: true }; }
+  return { name: e.add.name, kind: e.add.kind, badge: 'AI 新增', tmp: true, isNew: true };
+}
+
+function pvRow(key, day, idx) {
+  const inf = pvInfo(key);
+  const [kIcon, kLabel] = KIND[inf.kind] || KIND.place;
+  const moved = inf.orig != null && inf.orig !== day;
+  return el('li', { class: 'it', 'data-id': key, style: `--c:${dayColor(day)}` },
+    el('div', { class: 'rail' }, el('span', { class: 'num', 'aria-hidden': 'true' }, String(idx + 1))),
+    el('article', { class: 'card item', onpointerdown: (e) => { if (e.pointerType === 'touch' && !e.target.closest('button')) startDrag(e, { id: key }, { hold: true, ...pvDragOpts() }); } },
+      el('div', { class: 'top' },
+        el('div', { class: 'main' },
+          el('div', { class: 'meta-line' },
+            inf.it?.time ? el('span', { class: 'tpill' }, inf.it.time) : null,
+            el('span', { class: 'ktag' }, icon(kIcon, 12), kLabel),
+            inf.badge ? el('span', { class: `pvbadge${inf.isNew ? ' new' : ''}` }, inf.badge) : null,
+            moved ? el('span', { class: 'pvbadge moved' }, `原本:${inf.orig ? `第 ${inf.orig} 天` : '還沒安排'}`) : null,
+            inf.stayChanged ? el('span', { class: 'pvbadge' }, `停留 ${fmtMin(inf.stay)}`) : null),
+          el('h3', { class: 'name' }, inf.name)),
+        el('div', { class: 'tools' },
+          el('button', { class: 'icon-btn grip', 'aria-label': `拖曳「${inf.name}」`, title: '按住拖曳', onpointerdown: (e) => startDrag(e, { id: key }, pvDragOpts()) }, icon('grip'))))));
+}
+
+const pvDragOpts = () => ({ root: $('pvNew'), scroller: $('pvBody'), onDrop: (layout) => { if (layout) { pv.days = layout.slice(1); } renderPv(); } });
+
+function pvDaySection(day, rows, tip, editable) {
+  const sec = el('section', { class: 'day', 'data-day': String(day), 'aria-label': day === 0 ? '還沒安排' : `第 ${day} 天`, style: `--c:${dayColor(day)}` },
+    el('div', { class: 'dayhead' }, el('div', { class: 'daybadge', 'aria-hidden': 'true' }, day === 0 ? icon('tag', 14) : String(day)), el('div', {}, el('h2', {}, day === 0 ? '還沒安排' : `第 ${day} 天`))));
+  if (tip) sec.append(el('div', { class: 'tip' }, tip));
+  const ol = el('ol', { class: 'tl' }, ...rows);
+  sec.append(ol);
+  return sec;
+}
+
+function renderPv() {
+  if (!trip) return;
+  // 目前
+  const cur = groups();
+  $('pvNow').replaceChildren(...cur.map((arr, d) => (d === 0 && !arr.length ? null : pvDaySection(d, arr.map((it, i) => {
+    const [kIcon, kLabel] = KIND[it.kind] || KIND.place;
+    return el('li', { class: 'it', style: `--c:${dayColor(d)}` }, el('div', { class: 'rail' }, el('span', { class: 'num' }, String(i + 1))),
+      el('article', { class: 'card item' }, el('div', { class: 'main' }, el('div', { class: 'meta-line' }, it.time ? el('span', { class: 'tpill' }, it.time) : null, el('span', { class: 'ktag' }, icon(kIcon, 12), kLabel)), el('h3', { class: 'name' }, it.name))));
+  }), d > 0 ? trip.tips[d] : null))).filter(Boolean));
+  // 建議
+  $('pvNew').replaceChildren(...pv.days.map((keys, i) => pvDaySection(i + 1, keys.map((k, j) => pvRow(k, i + 1, j)), pv.tips[i], true)));
+  // 摘要
+  let moved = 0, added = 0, hotelCopies = 0;
+  pv.days.forEach((keys, i) => keys.forEach((k) => { const inf = pvInfo(k); if (inf.isNew) added++; else if (inf.tmp) hotelCopies++; else if (inf.orig !== i + 1) moved++; }));
+  $('pvSummary').textContent = [pv.usedAi ? '' : 'AI 暫時沒回應,先用距離排的建議。', `和目前相比:${moved} 個項目換到不同天`, added ? `${added} 個新增` : null, hotelCopies ? `${hotelCopies} 個住宿出發/回住宿` : null].filter(Boolean).join(' · ') + '。滿意再按「套用」。';
+  $('pv').dataset.tab = pv.tab; $('pvTabNew').setAttribute('aria-selected', String(pv.tab === 'new')); $('pvTabNow').setAttribute('aria-selected', String(pv.tab === 'now'));
+}
+
+async function pvRequest(instruction, withDraft) {
+  if (pv.busy) return false;
+  pv.busy = true;
+  ['pvApply', 'pvRefine'].forEach((id) => { $(id).disabled = true; });
+  const wasHtml = $('pvRefine').innerHTML;
+  $('pvRefine').textContent = 'AI 排行程中…';
+  if (!withDraft) $('pvNew').replaceChildren(el('div', { class: 'pv-loading' }, 'AI 正在排…'));
+  else $('pvNew').style.opacity = '.5';
+  try {
+    const body = { instruction };
+    if (withDraft) {
+      body.draft = pv.days.map((keys) => keys.map((k) => pv.entries.get(k)).filter((e) => e.id).map((e) => e.id));
+      body.draftAdds = pv.days.flatMap((keys, i) => keys.map((k) => pv.entries.get(k)).filter((e) => e.add).map((e) => ({ name: e.add.name, kind: e.add.kind, day: i + 1 })));
+    }
+    const res = await api('POST', `/${tripId}/plan/preview`, body);
+    // 微調時 AI 沒回應:保留使用者目前拖曳好的草稿,不要被距離排法蓋掉
+    if (withDraft && !res.usedAi) { renderPv(); toast('AI 暫時沒回應,沒有做任何變更,稍後再試一次', true); return false; }
+    pvLoad(res);
+    renderPv();
+    return true;
+  } catch (e) { toast(e.message, true); if (!withDraft) renderPv(); return false; }
+  finally { pv.busy = false; $('pvNew').style.opacity = ''; ['pvApply', 'pvRefine'].forEach((id) => { $(id).disabled = false; }); $('pvRefine').innerHTML = wasHtml; hydrateIcons($('pvRefine')); }
+}
+
+async function openPreview(instruction) {
+  if (!trip.items.length) { toast('請先加入一些地點', true); return; }
+  pv.stays = new Map(); pv.tab = 'new'; pv.days = Array.from({ length: trip.days }, () => []);
+  $('pvText').value = '';
+  renderPv();
+  $('pv').showModal();
+  if (!(await pvRequest(instruction, false))) $('pv').close();
+}
+
+function setupPreview() {
+  const close = () => $('pv').close();
+  $('pvClose').onclick = close; $('pvCancel').onclick = close;
+  $('pvTabNew').onclick = () => { pv.tab = 'new'; renderPv(); };
+  $('pvTabNow').onclick = () => { pv.tab = 'now'; renderPv(); };
+  const refine = async () => {
+    const text = $('pvText').value.trim();
+    if (!text) { toast('請先輸入想怎麼調整', true); $('pvText').focus(); return; }
+    if (await pvRequest(text, true)) { $('pvText').value = ''; toast('已依你的想法重新排,可以再拖曳或繼續調整'); }
+  };
+  $('pvRefine').onclick = refine;
+  $('pvText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); refine(); } });
+  $('pvApply').onclick = async () => {
+    if (pv.busy) return;
+    const snapshot = JSON.parse(JSON.stringify(trip.items));
+    $('pvApply').disabled = true;
+    try {
+      const r = await api('POST', `/${tripId}/plan/apply`, {
+        days: pv.days.map((keys) => keys.map((k) => pv.entries.get(k))),
+        tips: pv.tips,
+        stays: [...pv.stays].map(([id, minutes]) => ({ id, minutes })),
+      });
+      $('pv').close();
+      fitNext = true;
+      await refresh(true);
+      const notes = (r.added || []).map((x) => `第 ${x.day} 天加了「${x.name}」`);
+      toast(['已套用 AI 排好的行程', ...notes].join('\n'), false, { label: '復原', run: () => undoPlan(snapshot) });
+    } catch (e) { toast(e.message, true); } finally { $('pvApply').disabled = false; }
+  };
 }
 
 // ================= 地圖 =================
@@ -1612,6 +1819,7 @@ function showTrip() {
   hydrateIcons($('trip'));
   hydrateIcons(document.body); // 對話框
   setupSheets();
+  setupPreview();
   setupTranslate();
 
   document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => actions[b.dataset.act]?.()));
@@ -1674,20 +1882,7 @@ function showTrip() {
     if (!$('planPanel').classList.contains('hidden')) $('planText').focus();
   };
   $('planPanel').querySelectorAll('.example').forEach((x) => { x.onclick = () => { $('planText').value = x.textContent; $('planText').focus(); }; });
-  $('planGo').onclick = async () => {
-    const instruction = $('planText').value.trim();
-    const snapshot = JSON.parse(JSON.stringify(trip.items));
-    const b = $('planGo'); const old = b.innerHTML; b.textContent = '排行程中…'; b.disabled = true;
-    await run(async () => {
-      const r = await api('POST', `/${tripId}/plan`, { instruction });
-      $('planPanel').classList.add('hidden'); $('planText').value = '';
-      const notes = [];
-      for (const x of r.stays || []) notes.push(`「${x.name}」停留改成 ${fmtMin(x.minutes)}`);
-      for (const x of r.added || []) notes.push(`第 ${x.day} 天加了「${x.name}」`);
-      toast(r.usedAi ? ['AI 排好了,可以再手動調整', ...notes].join('\n') : 'AI 暫時沒回應,已先依距離幫你排好(你的想法沒有套用,請稍後再試)', false, { label: '復原', run: () => undoPlan(snapshot) });
-    });
-    b.innerHTML = old; b.disabled = false; hydrateIcons(b);
-  };
+  $('planGo').onclick = () => { const text = $('planText').value.trim(); $('planPanel').classList.add('hidden'); $('planText').value = ''; openPreview(text); };
 
   refresh(true);
   // 家人同時編輯:每 4 秒看一次有沒有新版本(只比對版本號,很省流量)
