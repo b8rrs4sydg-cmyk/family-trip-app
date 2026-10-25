@@ -51,6 +51,7 @@ export function parseOverpass(json, point) {
 
 export async function nearbyTransit(point, fetchFn = fetch) {
   const q = `[out:json][timeout:10];node(around:1000,${point.lat},${point.lng})[railway~"^(station|halt)$"]->.s;.s out body;rel(bn.s)[type=route][route~"^(subway|train|light_rail|monorail)$"];out tags;`;
+  const errs = [];
   for (const base of OVERPASS) {
     try {
       const res = await fetchFn(base, {
@@ -61,9 +62,9 @@ export async function nearbyTransit(point, fetchFn = fetch) {
       });
       if (!res.ok) throw new Error(`overpass ${res.status}`);
       return parseOverpass(await res.json(), point);
-    } catch (e) { console.error('overpass failed', e); }
+    } catch (e) { console.error('overpass failed', e); errs.push(`${new URL(base).host}: ${e.message}`); }
   }
-  return { stations: [], lines: [] };
+  return { stations: [], lines: [], err: errs.join('; ') };
 }
 
 export function normalizeTransit(raw) {
@@ -85,7 +86,7 @@ export async function transitAdvice(env, { from, to }, fetchFn = fetch) {
   for (const extra of [{ response_format: { type: 'json_schema', json_schema: SCHEMA } }, {}]) {
     try {
       const r = normalizeTransit(parseAiResponse(await env.AI.run(env.AI_MODEL, { ...base, ...extra })));
-      if (r) return { ...r, from: nf.stations[0]?.name || null, to: nt.stations[0]?.name || null, grounded: nf.stations.length > 0 && nt.stations.length > 0 };
+      if (r) return { ...r, from: nf.stations[0]?.name || null, to: nt.stations[0]?.name || null, grounded: nf.stations.length > 0 && nt.stations.length > 0, diag: nf.err || nt.err || undefined };
     } catch (e) { console.error('AI transit failed', e); }
   }
   return null;
