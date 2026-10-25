@@ -3,11 +3,11 @@
 // - 行程資料 GET /api/trips/<id>:網路優先,斷線時回傳上次的完整行程,並加上 x-offline 標頭讓畫面顯示「離線中」
 // - MapLibre(jsDelivr):快取優先
 // 地圖圖磚不快取,離線時地圖底圖會是空白,但地點清單、時間、備註、常用日文句都看得到。
-const VER = 'v26';
+const VER = 'v27';
 const SHELL = `shell-${VER}`;
 const DATA = `data-${VER}`;
 const CDN = `cdn-${VER}`;
-const SHELL_URLS = ['/', '/geo.js', '/geocoding.js', '/phrases.js', '/manifest.webmanifest', '/icon.svg'];
+const SHELL_URLS = ['/', '/geo.js', '/geocoding.js', '/route-order.js', '/phrases.js', '/manifest.webmanifest', '/icon.svg'];
 const TRIP_RE = /^\/api\/trips\/[a-z0-9]{12}$/;
 
 self.addEventListener('install', (e) => {

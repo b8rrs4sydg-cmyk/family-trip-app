@@ -162,6 +162,7 @@
   .daybadge { width: 30px; height: 30px; border-radius: 9px; background: var(--c); color: #fff; font-weight: 700; font-size: 15px; display: grid; place-items: center; }
   .dayhead h2 { font-size: 18px; font-weight: 700; line-height: 1.2; letter-spacing: -.01em; }
   .dayhead p { font-size: 12px; color: var(--muted); }
+  .dayhead .sortbtn { margin-left: auto; }
   .tip { margin: 8px 0 0 40px; padding: 8px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-text); font-size: 13px; }
   .empty { margin: 8px 0 0 40px; padding: 12px; border-radius: 10px; background: var(--fill); color: var(--muted); font-size: 13px; }
   .tl { list-style: none; margin: 8px 0 0; padding: 0; }
@@ -603,6 +604,7 @@
 <script type="module">
 import { PHRASES } from '/phrases.js';
 import { dayColor, hasCoord, haversineKm, addMinutes, estimateTravel, recommendMode, roadKm, fmtKm, fmtMin, directionsUrl, money, dayDateLabel, tripText, isoDate, departureISO, flightSearchUrl, hotelSearchUrl } from '/geo.js';
+import { orderDay, pathKm } from '/route-order.js';
 import { queryFromTitle, nominatimUrl, photonUrl, parseNominatim, parsePhoton, relevant } from '/geocoding.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1071,7 +1073,8 @@ function render() {
         el('div', { class: 'daybadge', 'aria-hidden': 'true' }, day === 0 ? icon('tag', 16) : String(day)),
         el('div', {},
           el('h2', {}, day === 0 ? '還沒安排' : `第 ${day} 天`),
-          el('p', {}, [dateLabel, arr.length ? `${arr.length} 個項目` : '尚無項目', sum ? money(sum) : null].filter(Boolean).join(' · ')))));
+          el('p', {}, [dateLabel, arr.length ? `${arr.length} 個項目` : '尚無項目', sum ? money(sum) : null].filter(Boolean).join(' · '))),
+        ...(day > 0 && arr.filter(hasCoord).length >= 3 ? [el('button', { class: 'btn sm sortbtn', type: 'button', title: '依距離重排,避免來回折返;有指定時間的不動', onclick: () => sortDay(day) }, '順路排序')] : [])));
     if (day > 0 && trip.tips[day]) sec.append(el('div', { class: 'tip' }, trip.tips[day]));
     if (!arr.length) sec.append(el('div', { class: 'empty' }, day === 0 ? '想去的地方先丟進來,再按「AI 排行程」。' : '這天還沒有安排,用上面的輸入框加入吧。'));
     else {
@@ -1173,6 +1176,28 @@ function applyLayout(layout, flashId) {
   if (flashId) { const li = document.querySelector(`.it[data-id="${CSS.escape(flashId)}"]`); li?.classList.add('dropped'); setTimeout(() => li?.classList.remove('dropped'), 900); }
   const body = {}; layout.forEach((ids, d) => { body[d] = ids; });
   return api('PUT', `/${tripId}/layout`, { layout: body }).catch((e) => { toast(e.message, true); return refresh(true); });
+}
+
+// 這一天依距離重排(有時間的不動),可復原
+function sortDay(day) {
+  const arr = groups()[day];
+  const next = orderDay(arr);
+  if (next.every((x, i) => x.id === arr[i].id)) { toast('這天的順序已經很順路了'); return; }
+  const before = groups().map((a) => a.map((x) => x.id));
+  const layout = groups().map((a, d) => (d === day ? next : a).map((x) => x.id));
+  const saved = (pathKm(arr) - pathKm(next)).toFixed(1);
+  slideTo(() => applyLayout(layout));
+  toast(`已依距離重排,少繞約 ${saved} km`, false, { label: '復原', run: () => slideTo(() => applyLayout(before)) });
+}
+
+// render 會換掉整批元素,所以用 id 對應舊位置再滑過去
+function slideTo(mutate) {
+  const top = new Map([...document.querySelectorAll('.it[data-id]')].map((r) => [r.dataset.id, r.getBoundingClientRect().top]));
+  mutate();
+  document.querySelectorAll('.it[data-id]').forEach((r) => {
+    const dy = top.get(r.dataset.id) - r.getBoundingClientRect().top;
+    if (Number.isFinite(dy) && Math.abs(dy) > 1) r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  });
 }
 
 // FLIP:元素換位置時,從舊位置滑到新位置
