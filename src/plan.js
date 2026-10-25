@@ -6,6 +6,7 @@ const SYSTEM = `你是台灣旅遊行程規劃助手,使用者是家中長輩,�
 - 每個地點 id 必須剛好出現一次,不可新增或遺漏。
 - 每天地點數量盡量平均,長輩體力有限,每天不要排太滿。
 - 「已固定行程」是使用者指定好的(例如航班),不要動它,也不要把它放進 days。請依它安排:有航班抵達的第一天少排一點;最後一天有航班離開,地點要排在出發前、集中在機場附近順路的地方。
+- 「住宿」是每天出發與回來的地方(已排好,不在地點清單裡)。請讓每天的第一個地點、最後一個地點都盡量靠近住宿,整天的路線像一個圈:從住宿出發、逛完回到住宿,不要來回跨區。
 - tips 是每天一句簡短提醒(如:早點出發、這天走路較多、記得預約)。
 - 若有「使用者的想法」,要優先照辦,並且仍遵守上面的規則:
   · 想把某地點「安排久一點/短一點」:在 stays 裡填那個地點的 id 與新的停留分鐘數(15 到 720);沒被要求的地點不要放進 stays。
@@ -115,7 +116,7 @@ export function parseAiResponse(result) {
   try { return JSON.parse(m[0]); } catch { return null; }
 }
 
-export async function planTrip(env, items, nDays, fixed = [], instruction = '') {
+export async function planTrip(env, items, nDays, fixed = [], instruction = '', lodging = []) {
   if (!items.length) return { days: Array.from({ length: nDays }, () => []), tips: [], stays: [], adds: [], usedAi: false };
   const list = items.map((i) => ({
     id: i.id, name: i.name, stayMinutes: i.stay ?? undefined,
@@ -124,7 +125,7 @@ export async function planTrip(env, items, nDays, fixed = [], instruction = '') 
   }));
   const messages = [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `天數:${nDays}\n已固定行程:${JSON.stringify(fixed.map((f) => ({ day: f.day, time: f.time, title: f.name })))}\n地點:${JSON.stringify(list)}\n${instruction ? `使用者的想法:${instruction}\n` : ''}請輸出 {"days":[[id,...],...共${nDays}天],"tips":[每天一句提醒,共${nDays}句],"stays":[{"id":"","minutes":60}],"adds":[{"name":"","day":1,"kind":"place"}]}` },
+    { role: 'user', content: `天數:${nDays}\n住宿:${JSON.stringify(lodging.map((l) => ({ name: l.name, lat: l.lat != null ? +l.lat.toFixed(4) : undefined, lng: l.lng != null ? +l.lng.toFixed(4) : undefined, fromDay: l.day > 0 ? l.day : 1 })))}\n已固定行程:${JSON.stringify(fixed.map((f) => ({ day: f.day, time: f.time, title: f.name })))}\n地點:${JSON.stringify(list)}\n${instruction ? `使用者的想法:${instruction}\n` : ''}請輸出 {"days":[[id,...],...共${nDays}天],"tips":[每天一句提醒,共${nDays}句],"stays":[{"id":"","minutes":60}],"adds":[{"name":"","day":1,"kind":"place"}]}` },
   ];
   const base = { messages, max_tokens: 1500, chat_template_kwargs: { enable_thinking: false } };
   // 先要求 json_schema;模型不支援就退回純文字再自行解析。

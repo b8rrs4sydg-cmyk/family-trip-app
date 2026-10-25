@@ -783,7 +783,7 @@ function updateTimes() {
     const v = t.get(n.dataset.id);
     if (!it || !v || !v.arrive) { n.hidden = true; return; }
     n.hidden = false;
-    const first = it.kind === 'flight' ? '起飛' : it.kind === 'hotel' ? '入住' : '抵達';
+    const first = it.kind === 'flight' ? '起飛' : it.kind === 'hotel' ? (/^從住宿出發/.test(it.note) ? '出發' : /^回住宿休息/.test(it.note) ? '返回' : '入住') : '抵達';
     n.textContent = `${first} ${v.est ? '約 ' : ''}${v.arrive}${v.leave ? ` · ${it.kind === 'hotel' ? '退房' : '離開'} ${v.leave}` : ''}`;
   });
 }
@@ -837,6 +837,25 @@ const needsGeo = (it) => !hasCoord(it) && !(it.geo_tried >= 2) && geocodable(it)
 const noLocation = (it) => !hasCoord(it) && it.geo_tried >= 2 && geocodable(it);
 
 // ================= 行程頁:清單 =================
+// ---------- 複製地點(名稱、地址、地圖連結),方便貼給計程車司機、訂房網站或 LINE ----------
+const AI_NOTE = /^(從住宿出發|回住宿休息)( · )?/;
+const copyable = (it) => !['flight', 'transport'].includes(it.kind) && (hasCoord(it) || it.note || it.url);
+async function reverseAddress(p) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=ja&lat=${p.lat}&lon=${p.lng}`, { signal: AbortSignal.timeout(4000) });
+    return res.ok ? (await res.json()).display_name || '' : '';
+  } catch { return ''; }
+}
+async function copyPlace(it) {
+  let addr = String(it.note || '').replace(AI_NOTE, '').trim();
+  let guessed = false;
+  if (!addr && hasCoord(it)) { addr = await reverseAddress(it); guessed = !!addr; }
+  const link = it.url || (hasCoord(it) ? `https://www.google.com/maps/search/?api=1&query=${it.lat},${it.lng}` : '');
+  const text = [it.name, addr, link].filter(Boolean).join('\n');
+  try { await navigator.clipboard.writeText(text); toast(guessed ? `已複製「${it.name}」(地址由地圖資料取得,請再確認)` : `已複製「${it.name}」的名稱與地址`); }
+  catch { prompt('請長按複製:', text); }
+}
+
 const STAYS = [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480];
 function fillStayOptions(cur) {
   const opts = [...new Set([...STAYS, ...(cur ? [cur] : [])])].sort((a, b) => a - b);
@@ -867,6 +886,7 @@ function itemRow(it, day, idx) {
         hasCoord(it) ? el('button', { class: 'link', onclick: () => showOnMap(it) }, ...withIcon('map', '地圖', 15)) : null,
         it.kind === 'flight' ? el('a', { class: 'link', href: flightSearchUrl(it, trip.start_date), target: '_blank', rel: 'noopener' }, ...withIcon('plane', '查機票', 15)) : null,
         it.kind === 'hotel' ? el('a', { class: 'link', href: hotelSearchUrl(it, trip.start_date), target: '_blank', rel: 'noopener' }, ...withIcon('bed', '查房價', 15)) : null,
+        copyable(it) ? el('button', { class: 'link', onclick: () => copyPlace(it) }, ...withIcon('copy', '複製', 15)) : null,
         needsGeo(it) ? el('span', { class: 'link quiet' }, '正在查位置…') : null,
         noLocation(it) ? el('button', { class: 'link warn', onclick: () => startPick(it) }, ...withIcon('target', '找不到位置,點選設定', 15)) : null)));
 }
