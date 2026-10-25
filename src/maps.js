@@ -95,15 +95,26 @@ export function parseMapsUrl(finalUrl) {
   return { name, lat, lng, cid: u.searchParams.get('cid') || null };
 }
 
+// 分享連結的名稱常是「地點名 地址」(例如「三麗鷗彩虹樂園 1 Chome-31 Ochiai, Tama, Tokyo 206-8588日本」):
+// 名稱留前半,地址放備註,查座標時兩者都會試。
+export function splitAddress(full) {
+  const m = /^(\S.*?)\s+(\d.*)$/.exec(full);
+  if (!m || m[1].length < 2) return { name: full, address: '' };
+  return { name: m[1], address: m[2].trim() };
+}
+
 export async function importPlace(text, fetchFn = fetch) {
   const { url, hint } = extractUrl(text);
   if (!url) return { name: hint.slice(0, 80) || null, lat: null, lng: null, url: null };
   const finalUrl = await resolveUrl(url, fetchFn);
   const p = parseMapsUrl(finalUrl);
   // 有座標但網址沒有名稱:用使用者一起貼的文字,再不行就先叫「地圖上的地點」,使用者可以在編輯裡改名
-  const name = (p.name || hint || (p.lat != null ? '地圖上的地點' : '')).slice(0, 80) || null;
+  const full = (p.name || hint || (p.lat != null ? '地圖上的地點' : '')).slice(0, 200);
+  const { name: short, address } = splitAddress(full);
+  const name = short.slice(0, 80) || null;
   return {
     name,
+    note: address,
     lat: p.lat,
     lng: p.lng,
     url, // 保留使用者貼的原始連結,點開就是 Google 地圖

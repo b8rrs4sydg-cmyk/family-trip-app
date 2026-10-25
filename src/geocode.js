@@ -8,6 +8,7 @@ export const DEFAULT_BASE = NOMINATIM;
 const UA = 'family-trip/1.0 (+https://github.com/b8rrs4sydg-cmyk/Trip)';
 
 // bases:{ nominatim, photon } 可換成自架的服務(wrangler.jsonc 的 GEOCODE_BASE、PHOTON_BASE)
-export function geocode(title, near = [], fetchFn = fetch, bases = {}) {
-  return geocodeWith(title, near, fetchFn, bases, { 'user-agent': UA });
+// alts:名稱查不到時改用的其他說法(例如地址)
+export function geocode(title, near = [], fetchFn = fetch, bases = {}, alts = []) {
+  return geocodeWith(title, near, fetchFn, bases, { 'user-agent': UA }, alts);
 }
