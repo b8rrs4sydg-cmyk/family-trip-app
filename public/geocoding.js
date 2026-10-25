@@ -68,6 +68,13 @@ export function relevant(query, text) {
 }
 
 // 依序試各個服務。有任何一個「回答了」(即使是查無)就算查過;全部都失敗(網路、限流)才丟錯。
+const km = (a, b) => {
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+};
+
+// maxKm:AI 推薦的地點一定在行程附近,查到離所有已知地點都很遠的結果(同名的外地店)就不採用
 export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}, alts = []) {
   const queries = [...new Set([title, ...alts].map(queryFromTitle).filter(Boolean))];
   if (!queries.length) return null;
@@ -87,7 +94,7 @@ export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}
           if (!res.ok) throw new Error(`geocode ${res.status}`);
           answered = true;
           const p = parse(await res.json());
-          if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng, address: p.address || '' };
+          if (p && relevant(q, p.text) && !(bases.maxKm && hasNear && near.filter(ok).every((n) => km(n, p) > bases.maxKm))) return { lat: p.lat, lng: p.lng, address: p.address || '' };
         } catch (e) { lastErr = e; }
       }
     }

@@ -206,3 +206,10 @@ test('isLodging:手動改過類別就不再用名稱猜', () => {
   assert.equal(isLodging({ name: '飯店早餐', kind: 'meal' }), true);
   assert.equal(isLodging({ name: '某處', kind: 'hotel', kind_set: 1 }), true);
 });
+
+test('geocode:maxKm 擋掉離行程很遠的同名結果', async () => {
+  const far = async () => ({ ok: true, json: async () => [{ lat: '22.63', lon: '120.30', display_name: '淺草雞肉飯, 高雄市' }] });
+  const near = [{ lat: 35.71, lng: 139.79 }];
+  assert.equal(await geocode('淺草雞肉飯', near, far, { maxKm: 60 }), null);
+  assert.ok(await geocode('淺草雞肉飯', near, far, {}));
+});

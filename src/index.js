@@ -473,7 +473,7 @@ async function handle(request, env) {
     for (const [i, it] of todo.entries()) {
       if (i) await sleep(1100);
       let pt = null;
-      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }, [...(it.alias ? [it.alias, `${it.alias} ${it.name}`] : []), `${it.name} ${it.note || ''}`, it.note, ...(splitAddress(it.name).address ? [splitAddress(it.name).name, splitAddress(it.name).address] : [])]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
+      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined, maxKm: it.alias ? 60 : undefined }, [...(it.alias ? [it.alias, `${it.alias} ${it.name}`] : []), `${it.name} ${it.note || ''}`, it.note, ...(splitAddress(it.name).address ? [splitAddress(it.name).name, splitAddress(it.name).address] : [])]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
       const addr = pt?.address ? pt.address.slice(0, 120) : '';
       stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 2, note = CASE WHEN note = \'\' AND ? != \'\' THEN ? ELSE note END WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, addr, addr, it.id, tripId));
       if (pt) { found++; near.push(pt); }

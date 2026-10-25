@@ -602,7 +602,7 @@
 
 <script type="module">
 import { PHRASES } from '/phrases.js';
-import { dayColor, hasCoord, addMinutes, estimateTravel, recommendMode, roadKm, fmtKm, fmtMin, directionsUrl, money, dayDateLabel, tripText, isoDate, departureISO, flightSearchUrl, hotelSearchUrl } from '/geo.js';
+import { dayColor, hasCoord, haversineKm, addMinutes, estimateTravel, recommendMode, roadKm, fmtKm, fmtMin, directionsUrl, money, dayDateLabel, tripText, isoDate, departureISO, flightSearchUrl, hotelSearchUrl } from '/geo.js';
 import { queryFromTitle, nominatimUrl, photonUrl, parseNominatim, parsePhoton, relevant } from '/geocoding.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1598,19 +1598,19 @@ const clientTried = new Set();
 
 async function clientGeocode(name, near, alias) {
   for (const t of [alias, name]) {
-    const p = t ? await clientGeocodeOne(t, near) : null;
+    const p = t ? await clientGeocodeOne(t, near, alias ? 60 : 0) : null;
     if (p) return p;
   }
   return null;
 }
 
-async function clientGeocodeOne(name, near) {
+async function clientGeocodeOne(name, near, maxKm) {
   const q = queryFromTitle(name);
   if (!q) return null;
   for (const [url, parse] of [[photonUrl(q, near, undefined, true), parsePhoton], [nominatimUrl(q, near, undefined, true), parseNominatim], [photonUrl(q, near), parsePhoton], [nominatimUrl(q, near), parseNominatim]]) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
-      if (res.ok) { const p = parse(await res.json()); if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng, address: p.address || '' }; }
+      if (res.ok) { const p = parse(await res.json()); if (p && relevant(q, p.text) && !(maxKm && near.some(hasCoord) && near.filter(hasCoord).every((n) => haversineKm(n, p) > maxKm))) return { lat: p.lat, lng: p.lng, address: p.address || '' }; }
     } catch { /* 換下一個服務 */ }
   }
   return null;
