@@ -44,14 +44,15 @@ export function photonUrl(q, near = [], base = PHOTON, bounded = false) {
 
 export function parseNominatim(json) {
   const hit = Array.isArray(json) ? json[0] : null;
-  const p = { lat: Number(hit?.lat), lng: Number(hit?.lon), text: [hit?.display_name, hit?.name, ...Object.values(hit?.namedetails || {})].filter(Boolean).join(' ') };
+  const p = { lat: Number(hit?.lat), lng: Number(hit?.lon), address: hit?.display_name || '', text: [hit?.display_name, hit?.name, ...Object.values(hit?.namedetails || {})].filter(Boolean).join(' ') };
   return ok(p) ? p : null;
 }
 
 export function parsePhoton(json) {
   const f = json?.features?.[0];
   const c = f?.geometry?.coordinates;
-  const p = { lat: Number(c?.[1]), lng: Number(c?.[0]), text: Object.values(f?.properties || {}).filter((v) => typeof v === 'string').join(' ') };
+  const pr = f?.properties || {};
+  const p = { lat: Number(c?.[1]), lng: Number(c?.[0]), address: [pr.name, pr.street, pr.housenumber, pr.district, pr.city, pr.state, pr.country].filter(Boolean).join(', '), text: Object.values(f?.properties || {}).filter((v) => typeof v === 'string').join(' ') };
   return ok(p) ? p : null;
 }
 
@@ -86,7 +87,7 @@ export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}
           if (!res.ok) throw new Error(`geocode ${res.status}`);
           answered = true;
           const p = parse(await res.json());
-          if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng };
+          if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng, address: p.address || '' };
         } catch (e) { lastErr = e; }
       }
     }

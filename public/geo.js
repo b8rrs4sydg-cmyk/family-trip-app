@@ -32,7 +32,7 @@ export function estimateTravel(a, b, mode = 'auto') {
 }
 
 // 是不是住宿:類型是 hotel,或名稱看起來像飯店/旅館/民宿
-export const isLodging = (it) => it?.kind === 'hotel' || /飯店|旅館|旅店|旅社|民宿|酒店|青年旅|度假村|Hotel|HOTEL|Hostel|Resort|Ryokan|ホテル|旅館/.test(String(it?.name ?? ''));
+export const isLodging = (it) => it?.kind === 'hotel' || (!it?.kind_set && /飯店|旅館|旅店|旅社|民宿|酒店|青年旅|度假村|Hotel|HOTEL|Hostel|Resort|Ryokan|ホテル|旅館/.test(String(it?.name ?? '')));
 
 // 依地點名稱和類型建議停留多久(分鐘);交通、住宿不設
 export function suggestStay(name = '', kind = 'place') {

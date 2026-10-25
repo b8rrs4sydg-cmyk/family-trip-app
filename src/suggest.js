@@ -6,7 +6,7 @@ const SYSTEM = `你是熟悉當地的旅遊顧問,使用者是帶長輩出遊的
 - 從「旅行名稱」與「已加入的地點」推斷目的地城市;推薦的地點要在同一個區域,方便順路。
 - 不要重複已加入的地點。
 - 偏好:步行不多、有座位休息、評價穩定的地方;美食請推薦具體店名或料理類型。
-- name 是地圖上搜得到的正式名稱;reason 用一句話說明為什麼適合(30 字內);kind 是 place(景點)或 meal(餐飲)。
+- name 是地圖上搜得到的正式名稱;local 是該地當地語言的名稱(例如日文、韓文、英文原名,沒有就留空);area 是所在的區或街道(例如「台東區淺草」);reason 用一句話說明為什麼適合(30 字內);kind 是 place(景點)或 meal(餐飲)。
 - 只輸出 JSON。`;
 
 const SCHEMA = {
@@ -18,10 +18,12 @@ const SCHEMA = {
         type: 'object',
         properties: {
           name: { type: 'string' },
+          local: { type: 'string' },
+          area: { type: 'string' },
           reason: { type: 'string' },
           kind: { type: 'string', enum: ['place', 'meal'] },
         },
-        required: ['name', 'reason', 'kind'],
+        required: ['name', 'local', 'area', 'reason', 'kind'],
       },
     },
   },
@@ -39,7 +41,7 @@ export function normalizeSuggestions(raw, existingNames = []) {
     const key = name.toLowerCase();
     if (seen.has(key) || have.some((h) => h.includes(key) || key.includes(h))) continue;
     seen.add(key);
-    out.push({ name, reason: String(s?.reason ?? '').trim().slice(0, 60), kind: s?.kind === 'meal' ? 'meal' : 'place' });
+    out.push({ name, local: String(s?.local ?? '').trim().slice(0, 60), area: String(s?.area ?? '').trim().slice(0, 40), reason: String(s?.reason ?? '').trim().slice(0, 60), kind: s?.kind === 'meal' ? 'meal' : 'place' });
     if (out.length >= 8) break;
   }
   return out;
@@ -48,7 +50,7 @@ export function normalizeSuggestions(raw, existingNames = []) {
 export async function suggestPlaces(env, { tripName, days, names, query }) {
   const messages = [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `旅行名稱:${tripName}\n天數:${days}\n已加入的地點:${JSON.stringify(names)}\n${query ? `使用者想找:${query}\n` : ''}請推薦 6 個,輸出 {"suggestions":[{"name":"","reason":"","kind":"place"}]}` },
+    { role: 'user', content: `旅行名稱:${tripName}\n天數:${days}\n已加入的地點:${JSON.stringify(names)}\n${query ? `使用者想找:${query}\n` : ''}請推薦 6 個,輸出 {"suggestions":[{"name":"","local":"","area":"","reason":"","kind":"place"}]}` },
   ];
   const base = { messages, max_tokens: 900, chat_template_kwargs: { enable_thinking: false } };
   for (const extra of [{ response_format: { type: 'json_schema', json_schema: SCHEMA } }, {}]) {
