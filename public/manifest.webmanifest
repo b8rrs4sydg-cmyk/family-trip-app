@@ -1,0 +1,16 @@
+{
+  "name": "家人旅行規劃",
+  "short_name": "旅行",
+  "description": "把地點排成每天的行程,地圖、翻譯、家人一起編輯",
+  "lang": "zh-Hant",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5efe3",
+  "theme_color": "#25406b",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
