@@ -321,9 +321,10 @@ async function handle(request, env) {
     const hit = await caches.default.match(key);
     if (hit) return json(await hit.json());
     const r = await transitAdvice(env, { from: { ...from, name: clean(from.name, 40) }, to: { ...to, name: clean(to.name, 40) } });
-    if (!r) return fail('暫時查不到搭法,請用「怎麼去」看導航', 503);
-    await caches.default.put(key, new Response(JSON.stringify(r), { headers: { 'cache-control': 'max-age=604800' } }));
-    return json(r);
+    // 沒有具體搭法(不推薦或查不到):回 available:false,畫面就不會出現大眾運輸的建議;只快取半天
+    const out = r ? { available: true, ...r } : { available: false };
+    await caches.default.put(key, new Response(JSON.stringify(out), { headers: { 'cache-control': `max-age=${r ? 604800 : 43200}` } }));
+    return json(out);
   }
 
   // 翻譯:文字(中↔日)
