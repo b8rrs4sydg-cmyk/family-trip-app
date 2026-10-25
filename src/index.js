@@ -131,7 +131,7 @@ const isLodgingCopy = (r) => r.added_by === AI_LODGING || (r.added_by === COPY_M
 //   all    (使用者明確要求重排整個行程):AI 重新分天。
 // 機場/車站這類已排在某一天的「出入口」:去程在第一天最前面、回程在最後一天最後面,AI 重排不能動
 const GATEWAY = /機場|空港|airport|港口|碼頭/i;
-const isGateway = (r) => r.day > 0 && !r.fixed && (r.kind === 'flight' || r.kind === 'transport' || GATEWAY.test(String(r.name)));
+const isGateway = (r) => r.day > 0 && !r.time && (r.kind === 'flight' || r.kind === 'transport' || GATEWAY.test(String(r.name)));
 
 async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, scopeIn) {
   const { results } = await env.DB.prepare(
