@@ -86,8 +86,8 @@
   .recent .go { margin-left: auto; color: var(--muted); }
 
   /* ---------- 上方列與天數 ---------- */
-  .sticky { position: sticky; top: 0; z-index: 30; margin: 0 -16px; background: color-mix(in srgb, var(--bg) 92%, transparent);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
+  .sticky { position: sticky; top: 0; z-index: 30; margin: 0 -16px; background: var(--bg);
+    border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
   .topbar { display: flex; align-items: center; gap: 4px; height: var(--topbar); padding: 0 8px 0 4px; }
   .topbar .ttl { flex: 1; min-width: 0; padding: 0 6px; }
   .topbar h1 { font-size: 20px; font-weight: 800; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -783,15 +783,21 @@ function dayChip(day, label, sub) {
     el('b', {}, label), el('small', {}, sub));
 }
 
-let io = null;
+let io = null, curDay = null;
 function observeDays() {
   io?.disconnect();
+  curDay = null;
   io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
       const day = e.target.id.replace('day-', '');
-      document.querySelectorAll('.dchip').forEach((p) => p.setAttribute('aria-current', String(p.dataset.day === day)));
-      document.querySelector('.dchip[aria-current="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+      if (day === curDay) continue;
+      curDay = day;
+      let cur = null;
+      document.querySelectorAll('.dchip').forEach((p) => { const on = p.dataset.day === day; p.setAttribute('aria-current', String(on)); if (on) cur = p; });
+      // 只橫向移動頁籤列;用 scrollIntoView 會連整頁一起捲,造成滑動卡頓
+      const nav = $('daynav');
+      if (cur && nav) nav.scrollTo({ left: cur.offsetLeft - (nav.clientWidth - cur.offsetWidth) / 2, behavior: 'auto' });
     }
   }, { rootMargin: '-160px 0px -62% 0px' });
   document.querySelectorAll('.day').forEach((s) => io.observe(s));
