@@ -186,14 +186,14 @@
   .link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 8px; background: var(--primary-soft); color: var(--primary); font-weight: 600; font-size: 13px; text-decoration: none; border: 0; cursor: pointer; }
   .link.warn { background: var(--accent-soft); color: var(--accent-text); }
   .link.quiet { background: transparent; color: var(--muted); padding: 0 4px; font-weight: 500; cursor: default; }
-  .hop-in { padding: 0 0 4px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+  .hop-in { padding: 2px 0 6px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
   .hop-top { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
   .ride { color: var(--ink); font-size: 13px; line-height: 1.45; padding: 6px 10px; border-radius: 10px; background: var(--fill); }
   .ride b { font-weight: 600; }
   .ride div { white-space: pre-line; margin-top: 2px; }
   .ride small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
   .tchips { display: flex; flex-wrap: wrap; gap: 5px; }
-  .tchip { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border-radius: 999px; border: 0; background: var(--fill); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .tchip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 9px; border-radius: 999px; border: 0; background: var(--fill); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
   .tchip small { font-size: 11px; color: var(--primary); font-weight: 600; }
   .tchip.on { background: var(--ink); color: var(--bg); }
   .tchip.on small { color: var(--bg); opacity: .75; }
@@ -201,10 +201,6 @@
   .hop-in a:hover { text-decoration: underline; }
   .grip { cursor: grab; touch-action: none; }
   body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
-  .it.dragging .item { opacity: .4; }
-  .it.drop-before .item { box-shadow: 0 -3px 0 0 var(--primary), var(--shadow-sm); }
-  .it.drop-after .item { box-shadow: 0 3px 0 0 var(--primary), var(--shadow-sm); }
-  .day.drop-end { outline: 2px dashed var(--primary); outline-offset: 6px; border-radius: 14px; }
   .flash .item { animation: flash 1.6s ease-out 1; }
   @keyframes flash { 0%, 30% { background: var(--primary-soft); } 100% { background: var(--surface); } }
   footer { margin-top: 32px; text-align: center; color: var(--muted); font-size: 12px; }
@@ -256,6 +252,44 @@
     background: var(--ink); color: var(--bg); box-shadow: var(--shadow); display: none; font-size: 14px; white-space: pre-line; }
   #toast.err { background: var(--danger); color: #fff; }
   @media (min-width: 980px) { #toast { bottom: 24px; } }
+
+  /* ---------- 動畫與拖曳 ---------- */
+  :root { --ease: cubic-bezier(.2, .8, .2, 1); }
+  .btn, .link, .tchip, .dchip, .example, .icon-btn, .menu button { transition: background-color .18s var(--ease), color .18s var(--ease), transform .12s var(--ease), opacity .18s; }
+  .link:active, .tchip:active, .dchip:active, .example:active { transform: scale(.96); }
+  .card { transition: box-shadow .2s var(--ease), transform .2s var(--ease), opacity .2s; }
+  .it.enter { animation: enter .38s var(--ease) both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+  .it.leaving { overflow: hidden; animation: leave .26s var(--ease) forwards; }
+  @keyframes leave { to { opacity: 0; transform: translateX(-24px); max-height: 0; margin: 0; } }
+  .day.first { animation: fade-up .35s var(--ease) both; }
+  .it.placeholder { animation: none; }
+  .it.dropped .card { animation: dropped .9s var(--ease); }
+  @keyframes dropped { 0%, 25% { box-shadow: 0 0 0 2px var(--primary), 0 8px 24px rgba(0, 113, 227, .25); } }
+  .card { -webkit-touch-callout: none; }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } }
+  .mappane, .left { animation: fade-in .25s var(--ease) both; }
+  @keyframes fade-in { from { opacity: 0; } }
+  #toast { transform: translateY(0); animation: toast-in .24s var(--ease) both; display: none; align-items: center; gap: 12px; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }
+  #toast button { margin-left: auto; flex: none; border: 0; background: rgba(128, 128, 128, .3); color: inherit; font-weight: 700; border-radius: 8px; min-height: 30px; padding: 0 12px; cursor: pointer; }
+  .dchip[aria-current="true"] { transform: scale(1.04); }
+  .composer textarea { transition: min-height .2s var(--ease), box-shadow .15s; }
+  .composer.compact textarea { min-height: 40px; height: 40px; resize: none; overflow: hidden; }
+  .composer.compact .row, .composer.compact details { display: none; }
+  .composer.compact .lead { display: none; }
+  /* 拖曳:浮起的卡片跟著手指,原位留一個虛線空位,其他卡片會讓開 */
+  .it.ghost { position: fixed; z-index: 90; margin: 0; pointer-events: none; transition: none; }
+  .it.ghost .card { box-shadow: 0 18px 40px rgba(0, 0, 0, .28), 0 0 0 1.5px var(--primary); transform: scale(1.025) rotate(-.6deg); }
+  .it.placeholder .card { background: var(--primary-soft); box-shadow: inset 0 0 0 1.5px var(--primary); }
+  .it.placeholder .card > * { visibility: hidden; }
+  .it.placeholder .num { opacity: .35; }
+  body.dragging .hop { display: none; }
+  body.dragging .daynav, body.dragging .bottomnav { opacity: .5; }
+  body.dragging .day.drop-end { outline: none; }
+  .it.pressing .card { transform: scale(.985); box-shadow: 0 0 0 1.5px var(--primary); }
+  .day.dragover .dayhead h2 { color: var(--primary); }
+  .tl.temp { min-height: 64px; }
   @media (max-width: 380px) { .sheet .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -310,9 +344,10 @@
     <div class="left">
       <section class="card composer">
         <label class="lead" for="addText">想去哪?直接說,或貼上連結</label>
-        <textarea class="field" id="addText" rows="3" placeholder="貼上 Google 地圖連結&#10;或直接說:第一天13:00飛東京"></textarea>
+        <textarea class="field" id="addText" rows="3" aria-label="想去哪?直接說,或貼上連結" placeholder="貼上 Google 地圖連結&#10;或直接說:第一天13:00飛東京"></textarea>
         <div class="row">
-          <button class="btn primary" id="addBtn" style="flex:1"><i data-i="plus"></i>加入行程</button>
+          <select class="field" id="addDay" aria-label="加到哪一天" style="width:auto;flex:none;max-width:42%"></select>
+          <button class="btn primary" id="addBtn" style="flex:1"><i data-i="plus"></i>加入</button>
           <button class="btn soft" id="pasteBtn"><i data-i="copy"></i>貼上</button>
         </div>
         <details>
@@ -549,11 +584,13 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } },
 };
 
-function toast(msg, isErr) {
+function toast(msg, isErr, action) {
   const t = $('toast');
-  t.textContent = msg; t.className = isErr ? 'err' : ''; t.style.display = 'block';
+  t.replaceChildren(el('span', {}, msg), ...(action ? [el('button', { type: 'button', onclick: () => { t.style.display = 'none'; action.run(); } }, action.label)] : []));
+  t.className = isErr ? 'err' : ''; t.style.display = 'flex';
+  t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { t.style.display = 'none'; }, isErr ? 7000 : 4500);
+  toast.timer = setTimeout(() => { t.style.display = 'none'; }, action ? 8000 : isErr ? 7000 : 4500);
 }
 
 function setOffline(flag) { $('offline')?.classList.toggle('hidden', !flag); }
@@ -684,31 +721,33 @@ function fillHop(li) {
   const km = r ? r.km : plan.est.km;
   let tag = '估算';
   if (r?.source === 'google') tag = r.predicted ? `依 ${plan.date.slice(5).replace('-', '/')} ${a.time || '09:00'} 出發預測` : '即時路況';
-  else if (r?.source === 'osrm') tag = '依道路計算,無路況';
-  const delay = r?.delayMin >= 3 ? `,塞車多 ${r.delayMin} 分` : '';
+  else if (r?.source === 'osrm') tag = '依道路計算';
+  const delay = r?.delayMin >= 3 ? ` · 塞車多 ${r.delayMin} 分` : '';
   const tm = computeTimes().get(a.id);
   const leave = tm?.leave || (tm?.arrive && a.kind !== 'flight' ? tm.arrive : null);
   const arrive = leave ? addMinutes(leave, min) : null;
   const suggested = suggestedMode(a, b);
+  const short = (m) => (m < 60 ? `${m} 分` : `${Math.floor(m / 60)} 時${m % 60 ? ` ${m % 60} 分` : ''}`);
   // 超過 6 公里就不提供步行(除非原本就選了步行)
   const chips = ['walk', 'transit', 'drive'].filter((m) => m !== 'walk' || roadKm(a, b) <= 6 || plan.est.mode === 'walk').map((m) => {
     const p = hopPlan(a, b, day, m);
     const h = routeCache.get(p.key);
     const real = h && h.data.source !== 'none' ? h.data : null;
     const on = m === plan.est.mode;
+    const mins = real ? real.min : p.est.min;
     return el('button', {
       type: 'button', class: `tchip${on ? ' on' : ''}`, 'aria-pressed': String(on),
-      'aria-label': `${MODE_LABEL[m]}約 ${fmtMin(real ? real.min : p.est.min)}${m === suggested ? ',建議' : ''}`,
+      'aria-label': `${MODE_LABEL[m]}約 ${fmtMin(mins)}${m === suggested ? ',建議' : ''}`,
       onclick: () => setTravel(a, m),
-    }, icon(MODE_ICON[m], 14), el('span', {}, `${MODE_LABEL[m]} ${real ? '' : '約 '}${fmtMin(real ? real.min : p.est.min)}`), m === suggested ? el('small', {}, '建議') : null);
+    }, icon(MODE_ICON[m], 14), el('span', {}, on ? `${MODE_LABEL[m]} ${short(mins)}` : short(mins)), m === suggested && !on ? el('small', {}, '建議') : null);
   });
   li.querySelector('.hop-in').replaceChildren(
-    el('div', { class: 'hop-top' }, icon('clock', 14),
-      el('span', {}, `${MODE_LABEL[plan.est.mode]}約 ${fmtMin(min)}(${fmtKm(km)}${delay})· ${tag}`),
+    el('div', { class: 'tchips', role: 'group', 'aria-label': '交通方式與時間' }, ...chips),
+    el('div', { class: 'hop-top' },
+      el('span', {}, `${fmtKm(km)}${delay} · ${tag}`),
       arrive ? el('span', {}, `${leave} 出發 → 約 ${arrive} 抵達`) : null,
       el('a', { href: directionsUrl(a, b, plan.est.mode), target: '_blank', rel: 'noopener' }, '怎麼去 ›')),
-    ...(plan.est.mode === 'transit' && plan.est.km > 1.2 ? [rideEl(a, b)] : []).filter(Boolean), // 不能直接傳 null:replaceChildren 會把它變成文字「null」
-    el('div', { class: 'tchips', role: 'group', 'aria-label': '改交通方式' }, ...chips));
+    ...(plan.est.mode === 'transit' && plan.est.km > 1.2 ? [rideEl(a, b)] : []).filter(Boolean)); // 不能直接傳 null:replaceChildren 會把它變成文字「null」
 }
 
 // 換交通方式:存在這一站上(大家共用),立刻重畫並查這個方式的路線
@@ -871,12 +910,15 @@ function fillStayOptions(cur) {
   $('sStay').value = cur ? String(cur) : '';
 }
 
+let lastDragEnd = 0;
+let seenIds = null;
+let freshIds = new Set();
 function itemRow(it, day, idx) {
   const nav = navUrl(it);
   const [kIcon, kLabel] = KIND[it.kind] || KIND.place;
-  return el('li', { class: 'it', 'data-id': it.id, style: `--c:${dayColor(day)}` },
+  return el('li', { class: `it${freshIds.has(it.id) ? ' enter' : ''}`, 'data-id': it.id, style: `--c:${dayColor(day)}` },
     el('div', { class: 'rail' }, el('span', { class: 'num', 'aria-hidden': 'true' }, day > 0 ? String(idx + 1) : '·')),
-    el('article', { class: 'card item' },
+    el('article', { class: 'card item', onclick: (e) => { if (!e.target.closest('button, a, select, input') && performance.now() - lastDragEnd > 400) openSheet(it, day, idx); }, onpointerdown: (e) => { if (e.pointerType === 'touch' && !e.target.closest('button, a, select, input')) startDrag(e, it, { hold: true }); }, oncontextmenu: (e) => { if (e.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches) e.preventDefault(); } },
       el('div', { class: 'top' },
         el('div', { class: 'main' },
           el('div', { class: 'meta-line' },
@@ -905,6 +947,9 @@ function dateRange() {
 }
 
 function render() {
+  freshIds = seenIds ? new Set(trip.items.filter((i) => !seenIds.has(i.id)).map((i) => i.id)) : new Set();
+  const firstRender = !seenIds;
+  seenIds = new Set(trip.items.map((i) => i.id));
   $('tripName').textContent = trip.name;
   document.title = trip.name + ' - 旅途規劃';
   const total = trip.items.reduce((s, i) => s + (i.cost || 0), 0);
@@ -917,7 +962,7 @@ function render() {
     const arr = g[day];
     const dateLabel = day > 0 ? dayDateLabel(trip.start_date, day) : null;
     const sum = arr.reduce((s, i) => s + (i.cost || 0), 0);
-    const sec = el('section', { class: 'day', id: `day-${day}`, 'aria-label': day === 0 ? '還沒安排' : `第 ${day} 天`, style: `--c:${dayColor(day)}` },
+    const sec = el('section', { class: firstRender ? 'day first' : 'day', id: `day-${day}`, 'aria-label': day === 0 ? '還沒安排' : `第 ${day} 天`, style: `--c:${dayColor(day)}` },
       el('div', { class: 'dayhead' },
         el('div', { class: 'daybadge', 'aria-hidden': 'true' }, day === 0 ? icon('tag', 16) : String(day)),
         el('div', {},
@@ -941,6 +986,7 @@ function render() {
   $('daynav').replaceChildren(
     ...(g[0].length ? [dayChip(0, '待排', `${g[0].length} 項`)] : []),
     ...Array.from({ length: trip.days }, (_, i) => dayChip(i + 1, `第 ${i + 1} 天`, dayDateLabel(trip.start_date, i + 1) || (g[i + 1].length ? `${g[i + 1].length} 項` : '—'))));
+  syncAddDay(curDay || 1);
   observeDays();
 
   drawMapChips();
@@ -956,6 +1002,16 @@ function dayChip(day, label, sub) {
 }
 
 let io = null, curDay = null;
+let addDayTouched = false;
+function syncAddDay(viewDay) {
+  const sel = $('addDay'); if (!sel || !trip) return;
+  if (sel.options.length !== trip.days + 1) {
+    sel.replaceChildren(el('option', { value: 0 }, '先不排天'), ...Array.from({ length: trip.days }, (_, i) => el('option', { value: i + 1 }, `加到第 ${i + 1} 天`)));
+    addDayTouched = false;
+    sel.onchange = () => { addDayTouched = true; };
+  }
+  if (!addDayTouched && viewDay != null) sel.value = String(Math.min(trip.days, Math.max(0, +viewDay || 0)));
+}
 function observeDays() {
   io?.disconnect();
   curDay = null;
@@ -965,6 +1021,7 @@ function observeDays() {
       const day = e.target.id.replace('day-', '');
       if (day === curDay) continue;
       curDay = day;
+      syncAddDay(day);
       let cur = null;
       document.querySelectorAll('.dchip').forEach((p) => { const on = p.dataset.day === day; p.setAttribute('aria-current', String(on)); if (on) cur = p; });
       // 只橫向移動頁籤列;用 scrollIntoView 會連整頁一起捲,造成滑動卡頓
@@ -978,62 +1035,144 @@ function observeDays() {
 // ================= 拖曳排序 =================
 // 按住每張卡片右上角的握把拖動:放到另一張卡片的上半/下半就插在它前/後,放到某一天的區塊上就加到那天最後。
 let drag = null;
-function clearDropMarks() {
-  document.querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
-  document.querySelectorAll('.drop-end').forEach((n) => n.classList.remove('drop-end'));
+
+// 把目前畫面上的排列(DOM 順序)轉成 [[id...]...](第 0 天起)
+function domLayout() {
+  const out = Array.from({ length: trip.days + 1 }, () => []);
+  document.querySelectorAll('#days .day').forEach((sec) => {
+    const d = Number(sec.id.replace('day-', ''));
+    sec.querySelectorAll('.tl > .it[data-id]').forEach((li) => out[d].push(li.dataset.id));
+  });
+  return out;
 }
 
-function startDrag(e, it) {
-  if (busy || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  e.preventDefault();
-  const handle = e.currentTarget;
-  const li = handle.closest('.it');
-  drag = { id: it.id, target: null, after: false, day: null };
-  li.classList.add('dragging');
-  document.body.classList.add('dragging');
-  handle.setPointerCapture?.(e.pointerId);
+// 樂觀更新:先在本機套用新排列並立刻重畫,再送到伺服器;失敗就重新抓
+function applyLayout(layout, flashId) {
+  const byId = new Map(trip.items.map((i) => [i.id, i]));
+  layout.forEach((ids, d) => ids.forEach((id, pos) => { const it = byId.get(id); if (it) { it.day = d; it.position = pos; } }));
+  render();
+  if (flashId) { const li = document.querySelector(`.it[data-id="${CSS.escape(flashId)}"]`); li?.classList.add('dropped'); setTimeout(() => li?.classList.remove('dropped'), 900); }
+  const body = {}; layout.forEach((ids, d) => { body[d] = ids; });
+  return api('PUT', `/${tripId}/layout`, { layout: body }).catch((e) => { toast(e.message, true); return refresh(true); });
+}
+
+// FLIP:元素換位置時,從舊位置滑到新位置
+function flipRows(mutate) {
+  const rows = [...document.querySelectorAll('#days .it[data-id]')].filter((r) => !r.classList.contains('ghost'));
+  const before = new Map(rows.map((r) => [r, r.getBoundingClientRect().top]));
+  mutate();
+  for (const r of rows) {
+    const dy = before.get(r) - r.getBoundingClientRect().top;
+    if (Math.abs(dy) > 1) r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+}
+
+const LONGPRESS_MS = 320;
+// 按住握把立刻拖;手機上也可以「長按整張卡片」開始拖(不長按就是正常捲動)
+function startDrag(e, it, opts = {}) {
+  if (busy || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!opts.hold) e.preventDefault();
+  const li = e.currentTarget.closest('.it');
+  const pointerId = e.pointerId;
+  const startX = e.clientX, startY = e.clientY;
+  let lastX = startX, lastY = startY;
+
+  const begin = () => {
+    const rect = li.getBoundingClientRect();
+    const ghost = li.cloneNode(true);
+    ghost.classList.add('ghost'); ghost.classList.remove('pressing', 'enter');
+    ghost.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;`;
+    document.body.append(ghost);
+    // 把「變成空位」放在 ghost 建好之後,這樣 ghost 保留原本的樣子
+    flipRows(() => { li.classList.add('placeholder'); document.body.classList.add('dragging'); });
+    navigator.vibrate?.(12);
+    // 沒有項目的天,放一個臨時的清單,才能拖進去
+    document.querySelectorAll('#days .day').forEach((sec) => {
+      if (!sec.querySelector('.tl')) { sec.querySelector('.empty')?.classList.add('hidden'); sec.append(el('ol', { class: 'tl temp' })); }
+    });
+    drag = { id: it.id, li, ghost, rect, offY: startY - rect.top, offX: startX - rect.left, scrollV: 0, raf: 0, pending: false };
+    window.addEventListener('touchmove', stopScroll, { passive: false });
+    drag.raf = requestAnimationFrame(tick);
+    place();
+  };
+
+  const stopScroll = (ev) => ev.preventDefault();
+
+  // 依手指位置找出要插入的位置:第幾天、插在哪一張卡片前面
+  const place = () => {
+    if (!drag) return;
+    drag.ghost.style.top = `${lastY - drag.offY}px`;
+    drag.ghost.style.left = `${drag.rect.left + (lastX - startX) * 0.2}px`;
+    const secs = [...document.querySelectorAll('#days .day')];
+    let sec = secs.find((x) => lastY < x.getBoundingClientRect().bottom) || secs[secs.length - 1];
+    if (!sec) return;
+    let ol = sec.querySelector('.tl');
+    const rows = [...ol.querySelectorAll(':scope > .it[data-id]')].filter((r) => r !== drag.li);
+    const ref = rows.find((r) => { const b = r.getBoundingClientRect(); return lastY < b.top + b.height / 2; }) || null;
+    if (drag.li.parentElement === ol && drag.li.nextElementSibling === ref) return;
+    flipRows(() => ol.insertBefore(drag.li, ref));
+    document.querySelectorAll('#days .day').forEach((x) => x.classList.toggle('dragover', x === sec));
+    navigator.vibrate?.(4);
+  };
+
+  // 手指停在畫面邊緣時持續捲動
+  const tick = () => {
+    if (!drag) return;
+    const top = 120, bottom = innerHeight - 100;
+    drag.scrollV = lastY < top ? -Math.ceil((top - lastY) / 8) : lastY > bottom ? Math.ceil((lastY - bottom) / 8) : 0;
+    if (drag.scrollV) { window.scrollBy(0, Math.max(-22, Math.min(22, drag.scrollV))); place(); }
+    drag.raf = requestAnimationFrame(tick);
+  };
 
   const onMove = (ev) => {
-    // 靠近畫面上下緣時自動捲動
-    if (ev.clientY < 150) window.scrollBy(0, -16);
-    else if (ev.clientY > innerHeight - 150) window.scrollBy(0, 16);
-    clearDropMarks();
-    drag.target = null; drag.day = null;
-    const hit = document.elementFromPoint(ev.clientX, ev.clientY);
-    const row = hit?.closest('.it[data-id]');
-    if (row && row.dataset.id !== drag.id) {
-      const r = row.getBoundingClientRect();
-      drag.target = row.dataset.id;
-      drag.after = ev.clientY > r.top + r.height / 2;
-      row.classList.add(drag.after ? 'drop-after' : 'drop-before');
-    } else if (!row) {
-      const sec = hit?.closest('.day');
-      if (sec) { drag.day = Number(sec.id.replace('day-', '')); sec.classList.add('drop-end'); }
+    if (ev.pointerId !== pointerId) return;
+    lastX = ev.clientX; lastY = ev.clientY;
+    if (!drag) { // 長按等待中:移動太多就當作是在捲動,取消
+      if (Math.hypot(lastX - startX, lastY - startY) > 8) cancelHold();
+      return;
     }
+    place();
   };
-  const finish = async (ev, cancelled) => {
-    handle.removeEventListener('pointermove', onMove);
-    handle.removeEventListener('pointerup', onUp);
-    handle.removeEventListener('pointercancel', onCancel);
-    clearDropMarks();
-    li.classList.remove('dragging');
-    document.body.classList.remove('dragging');
-    const d = drag; drag = null;
-    if (cancelled || !d || (d.target === null && d.day === null)) return;
-    const g = groups().map((arr) => arr.filter((x) => x.id !== d.id));
-    const moved = trip.items.find((x) => x.id === d.id);
-    if (d.target) {
-      const day = g.findIndex((arr) => arr.some((x) => x.id === d.target));
-      const idx = g[day].findIndex((x) => x.id === d.target);
-      g[day].splice(d.after ? idx + 1 : idx, 0, moved);
-    } else g[d.day].push(moved);
-    await saveLayout(g);
+  const cleanup = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel);
+    window.removeEventListener('touchmove', stopScroll);
   };
-  const onUp = (ev) => finish(ev, false);
-  const onCancel = (ev) => finish(ev, true);
-  handle.addEventListener('pointermove', onMove);
-  handle.addEventListener('pointerup', onUp);
-  handle.addEventListener('pointercancel', onCancel);
+  let holdTimer = 0;
+  const cancelHold = () => { clearTimeout(holdTimer); li.classList.remove('pressing'); cleanup(); };
+
+  const finish = (cancelled) => {
+    cleanup();
+    if (!drag) { cancelHold(); return; }
+    const d = drag; drag = null; lastDragEnd = performance.now();
+    cancelAnimationFrame(d.raf);
+    const layout = domLayout();
+    const slot = d.li.getBoundingClientRect();
+    const done = () => {
+      d.ghost.remove();
+      document.body.classList.remove('dragging');
+      document.querySelectorAll('#days .day').forEach((x) => x.classList.remove('dragover'));
+      document.querySelectorAll('#days .tl.temp').forEach((x) => x.remove());
+      document.querySelectorAll('#days .empty.hidden').forEach((x) => x.classList.remove('hidden'));
+      d.li.classList.remove('placeholder');
+      const before = groups().map((arr) => arr.map((x) => x.id).join());
+      const same = layout.every((ids, i) => ids.join() === before[i]);
+      if (cancelled || same) { render(); return; }
+      navigator.vibrate?.(10);
+      applyLayout(layout, d.id);
+    };
+    // 浮起的卡片滑進空位,再放下
+    d.ghost.animate([{ top: d.ghost.style.top, left: d.ghost.style.left }, { top: `${slot.top}px`, left: `${slot.left}px` }], { duration: 170, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = done;
+  };
+  const onUp = (ev) => { if (ev.pointerId === pointerId) finish(false); };
+  const onCancel = (ev) => { if (ev.pointerId === pointerId && drag) finish(true); else if (ev.pointerId === pointerId) cancelHold(); };
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel);
+  if (opts.hold) { li.classList.add('pressing'); holdTimer = setTimeout(() => { li.classList.remove('pressing'); begin(); }, LONGPRESS_MS); }
+  else begin();
 }
 
 // ================= 地圖 =================
@@ -1304,9 +1443,13 @@ function setupSheets() {
   };
   $('sDel').onclick = async () => {
     const it = editing?.it; if (!it) return;
-    if (!confirm(`確定要刪除「${it.name}」嗎?`)) return;
     $('sheet').close();
-    await run(() => api('DELETE', `/${tripId}/items/${it.id}`), '已刪除');
+    const snapshot = { ...it };
+    const li = document.querySelector(`.it[data-id="${CSS.escape(it.id)}"]`);
+    li?.classList.add('leaving');
+    await sleep(230);
+    await run(() => api('DELETE', `/${tripId}/items/${it.id}`));
+    toast(`已刪除「${it.name}」`, false, { label: '復原', run: () => run(() => api('POST', `/${tripId}/items/restore`, { item: snapshot })) });
   };
 
   $('cSave').onclick = async () => {
@@ -1452,7 +1595,7 @@ function showTrip() {
   $('addBtn').onclick = async () => {
     const text = $('addText').value.trim();
     if (!text) { toast('請先輸入想去的地方,或貼上連結', true); $('addText').focus(); return; }
-    const r = await run(() => api('POST', `/${tripId}/add`, { text }));
+    const r = await run(() => api('POST', `/${tripId}/add`, { text, day: +$('addDay').value || 0 }));
     if (!r) return;
     $('addText').value = '';
     fitNext = true;
@@ -1483,6 +1626,15 @@ function showTrip() {
     b.disabled = false; b.textContent = '推薦';
   };
 
+  // 輸入框平常縮成一行,點進去才展開,讓行程一進來就看得到
+  const composer = document.querySelector('.composer');
+  const compactIfIdle = () => setTimeout(() => { if (!composer.contains(document.activeElement) && !$('addText').value.trim()) setCompact(true); }, 120);
+  const FULL_PH = $('addText').placeholder, SHORT_PH = '想去哪?貼上連結,或直接說…';
+  const setCompact = (on) => { composer.classList.toggle('compact', on); $('addText').placeholder = on ? SHORT_PH : FULL_PH; };
+  setCompact(true);
+  composer.addEventListener('focusin', () => setCompact(false));
+  composer.addEventListener('focusout', compactIfIdle);
+  $('addText').addEventListener('click', () => setCompact(false));
   $('planBtn').onclick = () => {
     if (!trip.items.length) { toast('請先加入一些地點', true); return; }
     $('sugPanel').classList.add('hidden');
