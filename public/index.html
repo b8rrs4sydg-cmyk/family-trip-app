@@ -698,8 +698,8 @@ function maybeRoutes() {
 
 // ---------- 位置狀態 ----------
 const geocodable = (it) => it.kind === 'place' || it.kind === 'hotel';
-const needsGeo = (it) => !hasCoord(it) && !it.geo_tried && geocodable(it);
-const noLocation = (it) => !hasCoord(it) && it.geo_tried && geocodable(it);
+const needsGeo = (it) => !hasCoord(it) && !(it.geo_tried >= 2) && geocodable(it);
+const noLocation = (it) => !hasCoord(it) && it.geo_tried >= 2 && geocodable(it);
 
 // ================= 行程頁:清單 =================
 function itemRow(it, day, idx) {

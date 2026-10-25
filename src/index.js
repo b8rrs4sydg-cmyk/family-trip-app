@@ -1,4 +1,4 @@
-import { importPlace, extractUrl } from './maps.js';
+import { importPlace, extractUrl, splitAddress } from './maps.js';
 import { planTrip } from './plan.js';
 import { ensureSchema } from './schema.js';
 import { insertIndex, mergeFixed } from './schedule.js';
@@ -203,8 +203,8 @@ async function handle(request, env) {
     if (pinned) {
       const lat = Number(body.lat), lng = Number(body.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return fail('座標格式不對');
-      sets.push('lat = ?', 'lng = ?', 'geo_tried = 1'); args.push(lat, lng);
-    } else if (body.geoTried === true) sets.push('geo_tried = 1');
+      sets.push('lat = ?', 'lng = ?', 'geo_tried = 2'); args.push(lat, lng);
+    } else if (body.geoTried === true) sets.push('geo_tried = 2');
     // 名稱改了、而且不是從地圖連結來的,就重新定位
     if (newName && !pinned) sets.push('lat = CASE WHEN url IS NULL AND name != ? THEN NULL ELSE lat END', 'lng = CASE WHEN url IS NULL AND name != ? THEN NULL ELSE lng END', 'geo_tried = CASE WHEN url IS NULL AND name != ? THEN 0 ELSE geo_tried END');
     if (newName && !pinned) args.push(newName, newName, newName);
@@ -247,7 +247,7 @@ async function handle(request, env) {
   // 補座標:把只有名稱的地點查成座標。一次最多 4 個、每個間隔超過 1 秒(Nominatim 的使用規範)
   if (parts[3] === 'geocode' && method === 'POST') {
     const { results: todo } = await env.DB.prepare(
-      `SELECT id, name, note FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried = 0 AND kind IN ${GEOCODABLE} LIMIT 4`,
+      `SELECT id, name, note FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried < 2 AND kind IN ${GEOCODABLE} LIMIT 4`,
     ).bind(tripId).all();
     const { results: near } = await env.DB.prepare('SELECT lat, lng FROM items WHERE trip_id = ? AND lat IS NOT NULL').bind(tripId).all();
     const stmts = [];
@@ -256,13 +256,13 @@ async function handle(request, env) {
     for (const [i, it] of todo.entries()) {
       if (i) await sleep(1100);
       let pt = null;
-      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }, [`${it.name} ${it.note || ''}`, it.note]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
-      stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 1 WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, it.id, tripId));
+      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }, [`${it.name} ${it.note || ''}`, it.note, ...(splitAddress(it.name).address ? [splitAddress(it.name).name, splitAddress(it.name).address] : [])]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
+      stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 2 WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, it.id, tripId));
       if (pt) { found++; near.push(pt); }
     }
     if (stmts.length) await env.DB.batch([...stmts, bump(env, tripId)]);
     const left = await env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried = 0 AND kind IN ${GEOCODABLE}`,
+      `SELECT COUNT(*) AS n FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried < 2 AND kind IN ${GEOCODABLE}`,
     ).bind(tripId).first();
     return json({ found, remaining: left.n, failed });
   }
