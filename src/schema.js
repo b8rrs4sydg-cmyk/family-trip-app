@@ -41,6 +41,8 @@ const ADDED_COLUMNS = [
   ['items', 'geo_tried', 'INTEGER NOT NULL DEFAULT 0'],
   ['items', 'travel', 'TEXT'],
   ['items', 'stay', 'INTEGER'],
+  ['items', 'alias', 'TEXT'],
+  ['items', 'kind_set', 'INTEGER NOT NULL DEFAULT 0'],
   ['trips', 'start_date', 'TEXT'],
   ['trips', 'code', 'TEXT'],
 ];

@@ -468,6 +468,7 @@
       <div><label class="f" for="sTime">時間</label><input class="field" type="time" id="sTime"></div>
       <div><label class="f" for="sDay">哪一天</label><select class="field" id="sDay"></select></div>
       <div class="full"><label class="f" for="sName">名稱</label><input class="field" id="sName" maxlength="80"></div>
+      <div><label class="f" for="sKind">類別</label><select class="field" id="sKind"></select></div>
       <div><label class="f" for="sStay">停留多久</label><select class="field" id="sStay"></select></div>
       <div><label class="f" for="sCost">花費(日圓 ¥)</label><input class="field" id="sCost" type="number" inputmode="numeric" min="0" step="1" placeholder="不填就是沒有"></div>
       <div class="full"><label class="f" for="sNote">備註(例如:要預約、幾點開門)</label><input class="field" id="sNote" maxlength="300"></div>
@@ -982,7 +983,7 @@ function maybeRoutes() {
 }
 
 // ---------- 位置狀態 ----------
-const geocodable = (it) => it.kind === 'place' || it.kind === 'hotel';
+const geocodable = (it) => it.kind === 'place' || it.kind === 'hotel' || it.kind === 'meal';
 const needsGeo = (it) => !hasCoord(it) && !(it.geo_tried >= 2) && geocodable(it);
 const noLocation = (it) => !hasCoord(it) && it.geo_tried >= 2 && geocodable(it);
 
@@ -1595,13 +1596,21 @@ let geoBusy = false;
 let serverGeoBlockedUntil = 0;
 const clientTried = new Set();
 
-async function clientGeocode(name, near) {
+async function clientGeocode(name, near, alias) {
+  for (const t of [alias, name]) {
+    const p = t ? await clientGeocodeOne(t, near) : null;
+    if (p) return p;
+  }
+  return null;
+}
+
+async function clientGeocodeOne(name, near) {
   const q = queryFromTitle(name);
   if (!q) return null;
   for (const [url, parse] of [[photonUrl(q, near, undefined, true), parsePhoton], [nominatimUrl(q, near, undefined, true), parseNominatim], [photonUrl(q, near), parsePhoton], [nominatimUrl(q, near), parseNominatim]]) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
-      if (res.ok) { const p = parse(await res.json()); if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng }; }
+      if (res.ok) { const p = parse(await res.json()); if (p && relevant(q, p.text)) return { lat: p.lat, lng: p.lng, address: p.address || '' }; }
     } catch { /* 換下一個服務 */ }
   }
   return null;
@@ -1623,8 +1632,8 @@ async function maybeGeocode() {
       const near = trip.items.filter(hasCoord);
       for (const it of trip.items.filter((x) => needsGeo(x) && !clientTried.has(x.id)).slice(0, 4)) {
         clientTried.add(it.id);
-        const p = await clientGeocode(it.name, near);
-        try { await api('PATCH', `/${tripId}/items/${it.id}`, p ? { lat: p.lat, lng: p.lng } : { geoTried: true }); } catch { /* 下一輪再試 */ }
+        const p = await clientGeocode(it.name, near, it.alias);
+        try { await api('PATCH', `/${tripId}/items/${it.id}`, p ? { lat: p.lat, lng: p.lng, ...(it.note ? {} : { note: (p.address || '').slice(0, 120) }) } : { geoTried: true }); } catch { /* 下一輪再試 */ }
         if (p) near.push(p);
         await sleep(1100);
       }
@@ -1678,6 +1687,8 @@ function openSheet(it, day, idx) {
   $('sTime').value = it.time || '';
   $('sCost').value = it.cost ?? '';
   fillStayOptions(it.stay);
+  $('sKind').replaceChildren(...Object.entries(KIND).map(([k, v]) => el('option', { value: k }, v[1])));
+  $('sKind').value = it.kind;
   $('sUp').disabled = idx === 0;
   $('sDown').disabled = idx === count - 1;
   $('sPin').classList.toggle('hidden', it.kind === 'flight' || it.kind === 'transport');
@@ -1698,7 +1709,7 @@ function setupSheets() {
     $('sheet').close();
     const newDay = +$('sDay').value;
     await run(async () => {
-      await api('PATCH', `/${tripId}/items/${it.id}`, { name: $('sName').value, note: $('sNote').value, time: $('sTime').value, cost: $('sCost').value, stay: $('sStay').value });
+      await api('PATCH', `/${tripId}/items/${it.id}`, { name: $('sName').value, note: $('sNote').value, time: $('sTime').value, cost: $('sCost').value, stay: $('sStay').value, ...($('sKind').value !== it.kind ? { kind: $('sKind').value } : {}) });
       if (newDay !== it.day) {
         const g = groups().map((arr) => arr.filter((x) => x.id !== it.id));
         g[newDay].push(it);
@@ -1782,7 +1793,7 @@ function renderSuggestions(list) {
       el('div', { class: 't' }, el('b', {}, s.name), el('span', {}, s.reason)),
       el('button', { class: 'btn sm primary', onclick: async () => {
         row.querySelector('button').disabled = true;
-        const r = await run(() => api('POST', `/${tripId}/add`, { text: s.name }));
+        const r = await run(() => api('POST', `/${tripId}/add`, { text: s.name, place: { kind: s.kind, alias: s.local || [s.area, s.name].filter(Boolean).join(' ') } }));
         if (r) { row.remove(); fitNext = true; toast(`已加入:${s.name}`); }
         else row.querySelector('button').disabled = false;
       } }, ...withIcon('plus', '加入', 18)));

@@ -8,6 +8,7 @@ const SYSTEM = `你是台灣旅遊行程規劃助手,使用者是家中長輩,�
 - 「已固定行程」是使用者指定好的(例如航班),不要動它,也不要把它放進 days。請依它安排:有航班抵達的第一天少排一點;最後一天有航班離開,地點要排在出發前、集中在機場附近順路的地方。
 - 預設不要把已經排在某一天的地點換到別天,也不要打亂他們原本的順序;只有在使用者的想法明確要求時(例如「第三天想逛街」「把某地點移到別天」)才可以移動,而且只動必要的部分。
 - 「住宿」是每天出發與回來的地方(已排好,不在地點清單裡)。請讓每天的第一個地點、最後一個地點都盡量靠近住宿,整天的路線像一個圈:從住宿出發、逛完回到住宿,不要來回跨區。
+- 每個地點的 kind 是使用者標的類別:place 景點、meal 餐飲、hotel 住宿、transport 交通、flight 航班、other 其他。meal 要排在用餐時段(中午前後或傍晚),且靠近前後的景點;景點避免排在深夜。
 - tips 是每天一句簡短提醒(如:早點出發、這天走路較多、記得預約)。
 - 若有「使用者的想法」,要優先照辦,並且仍遵守上面的規則:
   · 想把某地點「安排久一點/短一點」:在 stays 裡填那個地點的 id 與新的停留分鐘數(15 到 720);沒被要求的地點不要放進 stays。
@@ -120,7 +121,7 @@ export function parseAiResponse(result) {
 export async function planTrip(env, items, nDays, fixed = [], instruction = '', lodging = [], draft = null) {
   if (!items.length) return { days: Array.from({ length: nDays }, () => []), tips: [], stays: [], adds: [], usedAi: false };
   const list = items.map((i) => ({
-    id: i.id, name: i.name, stayMinutes: i.stay ?? undefined,
+    id: i.id, name: i.name, kind: i.kind || undefined, stayMinutes: i.stay ?? undefined,
     lat: i.lat != null ? +i.lat.toFixed(4) : undefined,
     lng: i.lng != null ? +i.lng.toFixed(4) : undefined,
   }));

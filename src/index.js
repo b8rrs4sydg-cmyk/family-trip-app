@@ -30,8 +30,8 @@ const int = (v, lo, hi, d) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
 };
 
-const ITEM_COLS = 'id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, travel, stay';
-const GEOCODABLE = "('place', 'hotel')"; // 吃飯、交通這類通常不是一個查得到的地名
+const ITEM_COLS = 'id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, travel, stay, kind_set, alias';
+const GEOCODABLE = "('place', 'hotel', 'meal')"; // 交通、航班這類通常不是一個查得到的地名
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -69,11 +69,11 @@ async function insertItem(env, tripId, nDays, e) {
   order.splice(idx, 0, id);
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried, stay)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, geo_tried, stay, alias)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(id, tripId, e.day, idx, e.name, e.lat ?? null, e.lng ?? null, e.url ?? null, e.note ?? '', e.who ?? '',
       e.time ?? null, KINDS.includes(e.kind) ? e.kind : 'place', e.day > 0 && e.fixed ? 1 : 0, e.lat != null ? 1 : 0,
-      e.stay !== undefined ? e.stay : suggestStay(e.name, KINDS.includes(e.kind) ? e.kind : 'place')),
+      e.stay !== undefined ? e.stay : suggestStay(e.name, KINDS.includes(e.kind) ? e.kind : 'place'), e.alias ?? null),
     ...layoutStatements(env, tripId, { [e.day]: order }),
     bump(env, tripId),
   ]);
@@ -81,7 +81,7 @@ async function insertItem(env, tripId, nDays, e) {
 }
 
 // 「加入」:貼連結 → 匯入地點;用說的 → AI 拆成多筆行程。回傳新增的項目摘要。
-async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0) {
+async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0, hint = null) {
   const { url } = extractUrl(text);
 
   if (url) {
@@ -99,7 +99,7 @@ async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0) {
   }
 
   if (!hasScheduleCue(text) && text.length <= 30) {
-    const id = await insertItem(env, tripId, nDays, { name: text, day: defaultDay, kind: 'place', who });
+    const id = await insertItem(env, tripId, nDays, { name: text, day: defaultDay, kind: hint?.kind || 'place', note: hint?.note, alias: hint?.alias, who });
     return [{ id, name: text, day: defaultDay, time: null }];
   }
 
@@ -131,7 +131,7 @@ const isLodgingCopy = (r) => r.added_by === AI_LODGING || (r.added_by === COPY_M
 //   all    (使用者明確要求重排整個行程):AI 重新分天。
 async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, scopeIn) {
   const { results } = await env.DB.prepare(
-    'SELECT id, name, lat, lng, day, position, time, kind, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
+    'SELECT id, name, lat, lng, day, position, time, kind, kind_set, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
   ).bind(tripId).all();
   const real = results.filter((r) => !isLodgingCopy(r));
   const hotels = real.filter((r) => isLodging(r));
@@ -187,7 +187,7 @@ async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, 
 // 套用(可能是使用者拖曳調整過的)排法。所有項目與欄位都重新驗證,不信任前端。
 async function applyProposal(env, tripId, nDays, body) {
   const { results } = await env.DB.prepare(
-    'SELECT id, name, lat, lng, day, kind, url, note, added_by FROM items WHERE trip_id = ?',
+    'SELECT id, name, lat, lng, day, kind, kind_set, url, note, added_by FROM items WHERE trip_id = ?',
   ).bind(tripId).all();
   const oldCopies = results.filter(isLodgingCopy);
   const real = results.filter((r) => !isLodgingCopy(r));
@@ -312,7 +312,9 @@ async function handle(request, env) {
     if (cnt.n >= MAX_ITEMS) return fail('項目太多了,請先刪除一些');
     try {
       const dd = Number(body.day);
-      const added = await smartAdd(env, tripId, exists.days, text, clean(body.who, 20), Number.isInteger(dd) && dd >= 1 && dd <= exists.days ? dd : 0);
+      const h = body.place && typeof body.place === 'object' ? body.place : null;
+      const hint = h ? { kind: KINDS.includes(h.kind) ? h.kind : 'place', note: clean(h.note, 300), alias: clean(h.alias, 80) || null } : null;
+      const added = await smartAdd(env, tripId, exists.days, text, clean(body.who, 20), Number.isInteger(dd) && dd >= 1 && dd <= exists.days ? dd : 0, hint);
       return json({ added });
     } catch (e) {
       return fail(e.message || '無法加入,請再試一次');
@@ -403,6 +405,11 @@ async function handle(request, env) {
       if (m !== null && (!Number.isFinite(m) || m < 0 || m > 1440)) return fail('停留時間格式不對');
       sets.push('stay = ?'); args.push(m);
     }
+    // 類別(景點/餐飲/住宿…):手動改過就記下來,之後不再用名稱猜
+    if (body.kind !== undefined) {
+      if (!KINDS.includes(body.kind)) return fail('類別不對');
+      sets.push('kind = ?', 'kind_set = 1'); args.push(body.kind);
+    }
     // 從這一站到下一站的交通方式;空字串 = 用建議的
     if (body.travel !== undefined) {
       if (body.travel !== '' && body.travel !== null && !MODES.includes(body.travel)) return fail('交通方式不對');
@@ -457,7 +464,7 @@ async function handle(request, env) {
   // 補座標:把只有名稱的地點查成座標。一次最多 4 個、每個間隔超過 1 秒(Nominatim 的使用規範)
   if (parts[3] === 'geocode' && method === 'POST') {
     const { results: todo } = await env.DB.prepare(
-      `SELECT id, name, note FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried < 2 AND kind IN ${GEOCODABLE} LIMIT 4`,
+      `SELECT id, name, note, alias FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried < 2 AND kind IN ${GEOCODABLE} LIMIT 4`,
     ).bind(tripId).all();
     const { results: near } = await env.DB.prepare('SELECT lat, lng FROM items WHERE trip_id = ? AND lat IS NOT NULL').bind(tripId).all();
     const stmts = [];
@@ -466,8 +473,9 @@ async function handle(request, env) {
     for (const [i, it] of todo.entries()) {
       if (i) await sleep(1100);
       let pt = null;
-      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }, [`${it.name} ${it.note || ''}`, it.note, ...(splitAddress(it.name).address ? [splitAddress(it.name).name, splitAddress(it.name).address] : [])]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
-      stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 2 WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, it.id, tripId));
+      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }, [...(it.alias ? [it.alias, `${it.alias} ${it.name}`] : []), `${it.name} ${it.note || ''}`, it.note, ...(splitAddress(it.name).address ? [splitAddress(it.name).name, splitAddress(it.name).address] : [])]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
+      const addr = pt?.address ? pt.address.slice(0, 120) : '';
+      stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 2, note = CASE WHEN note = \'\' AND ? != \'\' THEN ? ELSE note END WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, addr, addr, it.id, tripId));
       if (pt) { found++; near.push(pt); }
     }
     if (stmts.length) await env.DB.batch([...stmts, bump(env, tripId)]);

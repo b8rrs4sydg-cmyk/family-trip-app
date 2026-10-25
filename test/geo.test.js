@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { haversineKm, estimateTravel, fmtKm, fmtMin, dayDateLabel, tripText, dayColor, directionsUrl, money, parseFlightTitle, isoDate, flightSearchUrl, hotelSearchUrl } from '../public/geo.js';
+import { haversineKm, estimateTravel, fmtKm, fmtMin, dayDateLabel, tripText, dayColor, directionsUrl, money, parseFlightTitle, isoDate, flightSearchUrl, hotelSearchUrl, isLodging } from '../public/geo.js';
 import { queryFromTitle, viewbox, geocode } from '../src/geocode.js';
 import { nominatimUrl, parseNominatim, parsePhoton } from '../public/geocoding.js';
 import { normalizeSuggestions, suggestPlaces } from '../src/suggest.js';
@@ -83,7 +83,7 @@ test('geocode 解析 Nominatim 結果,帶 User-Agent 與偏好範圍', async () 
   let seen;
   const fetchFn = async (url, init) => { seen = { url: new URL(url), init }; return Response.json([{ lat: '35.7148374', lon: '139.7967029' }]); };
   const r = await geocode('去淺草寺', [{ lat: 35.6, lng: 139.7 }], fetchFn);
-  assert.deepEqual(r, { lat: 35.7148374, lng: 139.7967029 });
+  assert.deepEqual(r, { lat: 35.7148374, lng: 139.7967029, address: '' });
   assert.equal(seen.url.searchParams.get('q'), '淺草寺');
   assert.ok(seen.url.searchParams.get('viewbox'));
   assert.match(seen.init.headers['user-agent'], /family-trip/);
@@ -98,7 +98,7 @@ test('geocode:Nominatim 被擋(失敗)時改用 Photon;兩個都查無才是 nul
     if (String(u).includes('nominatim')) return new Response('', { status: 429 });
     return Response.json({ features: [{ geometry: { coordinates: [139.4294453, 35.6245615] } }] });
   };
-  assert.deepEqual(await geocode('サンリオピューロランド', [{ lat: 35.6, lng: 139.4 }], blocked), { lat: 35.6245615, lng: 139.4294453 });
+  assert.deepEqual(await geocode('サンリオピューロランド', [{ lat: 35.6, lng: 139.4 }], blocked), { lat: 35.6245615, lng: 139.4294453, address: '' });
   assert.equal(urls.length, 2);
   assert.match(urls[1], /photon\.komoot\.io\/api\/\?q=/);
   assert.match(urls[1], /lat=35\.6000&lon=139\.4000/); // 以已知地點為偏好位置
@@ -113,7 +113,7 @@ test('geocode:Nominatim 被擋(失敗)時改用 Photon;兩個都查無才是 nul
 test('解析器共用的 URL 與結果格式', () => {
   assert.match(nominatimUrl('淺草寺', []), /^https:\/\/nominatim\.openstreetmap\.org\/search\?/);
   assert.equal(parseNominatim([]), null);
-  assert.deepEqual(parsePhoton({ features: [{ geometry: { coordinates: [139.8, 35.7] } }] }), { lat: 35.7, lng: 139.8, text: '' });
+  assert.deepEqual(parsePhoton({ features: [{ geometry: { coordinates: [139.8, 35.7] } }] }), { lat: 35.7, lng: 139.8, text: '', address: '' });
   assert.equal(parsePhoton({ features: [{ geometry: { coordinates: ['x', 'y'] } }] }), null);
   assert.equal(parseNominatim([{ lat: '999', lon: '1' }]), null);
 });
@@ -194,4 +194,15 @@ test('relevant: 中日文查詢要有連續兩字出現在結果裡', async () =
   assert.equal(relevant('淺草寺', '浅草寺 淺草寺 Sensō-ji'), true);
   assert.equal(relevant('Sanrio Puroland', 'サンリオピューロランド'), true);
   assert.equal(relevant('東京鐵塔', ''), true);
+});
+
+test('geocode 回傳地址(Nominatim display_name、Photon 組合欄位)', () => {
+  assert.equal(parseNominatim([{ lat: '35.7', lon: '139.8', display_name: '淺草寺, 台東區, 東京都, 日本' }]).address, '淺草寺, 台東區, 東京都, 日本');
+  assert.equal(parsePhoton({ features: [{ geometry: { coordinates: [139.8, 35.7] }, properties: { name: '淺草寺', city: '台東區', country: '日本' } }] }).address, '淺草寺, 台東區, 日本');
+});
+
+test('isLodging:手動改過類別就不再用名稱猜', () => {
+  assert.equal(isLodging({ name: '飯店早餐', kind: 'meal', kind_set: 1 }), false);
+  assert.equal(isLodging({ name: '飯店早餐', kind: 'meal' }), true);
+  assert.equal(isLodging({ name: '某處', kind: 'hotel', kind_set: 1 }), true);
 });
