@@ -96,3 +96,9 @@ test('importPlace:有座標但沒名稱時用貼上的文字,再不行用預設�
   const b = await importPlace('https://www.google.com/maps/search/35.6246,139.4262', none);
   assert.equal(b.name, '地圖上的地點');
 });
+
+test('splitAddress: 名稱與地址分開', async () => {
+  const { splitAddress } = await import('../src/maps.js');
+  assert.deepEqual(splitAddress('三麗鷗彩虹樂園 1 Chome-31 Ochiai, Tama, Tokyo 206-8588日本'), { name: '三麗鷗彩虹樂園', address: '1 Chome-31 Ochiai, Tama, Tokyo 206-8588日本' });
+  assert.deepEqual(splitAddress('淺草寺'), { name: '淺草寺', address: '' });
+});

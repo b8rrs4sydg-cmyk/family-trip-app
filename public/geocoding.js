@@ -53,23 +53,25 @@ export function parsePhoton(json) {
 }
 
 // 依序試各個服務。有任何一個「回答了」(即使是查無)就算查過;全部都失敗(網路、限流)才丟錯。
-export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}) {
-  const q = queryFromTitle(title);
-  if (!q) return null;
-  const providers = [
-    [nominatimUrl(q, near, bases.nominatim), parseNominatim],
-    [photonUrl(q, near, bases.photon), parsePhoton],
-  ];
+export async function geocodeWith(title, near, fetchFn, bases = {}, headers = {}, alts = []) {
+  const queries = [...new Set([title, ...alts].map(queryFromTitle).filter(Boolean))];
+  if (!queries.length) return null;
   let answered = false;
   let lastErr = null;
-  for (const [url, parse] of providers) {
-    try {
-      const res = await fetchFn(url, { headers, signal: AbortSignal.timeout(5000) });
-      if (!res.ok) throw new Error(`geocode ${res.status}`);
-      answered = true;
-      const p = parse(await res.json());
-      if (p) return p;
-    } catch (e) { lastErr = e; }
+  for (const q of queries) {
+    const providers = [
+      [nominatimUrl(q, near, bases.nominatim), parseNominatim],
+      [photonUrl(q, near, bases.photon), parsePhoton],
+    ];
+    for (const [url, parse] of providers) {
+      try {
+        const res = await fetchFn(url, { headers, signal: AbortSignal.timeout(5000) });
+        if (!res.ok) throw new Error(`geocode ${res.status}`);
+        answered = true;
+        const p = parse(await res.json());
+        if (p) return p;
+      } catch (e) { lastErr = e; }
+    }
   }
   if (!answered) throw lastErr || new Error('geocode failed');
   return null;

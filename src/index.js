@@ -101,6 +101,10 @@ async function smartAdd(env, tripId, nDays, text, who) {
   if (!entries.length) throw new Error('看不懂這句話,可以換個說法,例如「第一天13:00從台灣飛往東京」');
   const added = [];
   for (const e of entries) {
+    // 同一天、同名、同時間已經有了(例如按了兩次):不重複加
+    const dup = await env.DB.prepare('SELECT id FROM items WHERE trip_id = ? AND day = ? AND name = ? AND COALESCE(time, \'\') = ?')
+      .bind(tripId, e.day, e.title, e.time ?? '').first();
+    if (dup) { added.push({ id: dup.id, name: e.title, day: e.day, time: e.time, duplicate: true }); continue; }
     const id = await insertItem(env, tripId, nDays, {
       name: e.title, note: e.note, day: e.day, time: e.time, kind: e.kind, fixed: e.day > 0, who,
     });
@@ -243,7 +247,7 @@ async function handle(request, env) {
   // 補座標:把只有名稱的地點查成座標。一次最多 4 個、每個間隔超過 1 秒(Nominatim 的使用規範)
   if (parts[3] === 'geocode' && method === 'POST') {
     const { results: todo } = await env.DB.prepare(
-      `SELECT id, name FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried = 0 AND kind IN ${GEOCODABLE} LIMIT 4`,
+      `SELECT id, name, note FROM items WHERE trip_id = ? AND lat IS NULL AND geo_tried = 0 AND kind IN ${GEOCODABLE} LIMIT 4`,
     ).bind(tripId).all();
     const { results: near } = await env.DB.prepare('SELECT lat, lng FROM items WHERE trip_id = ? AND lat IS NOT NULL').bind(tripId).all();
     const stmts = [];
@@ -252,7 +256,7 @@ async function handle(request, env) {
     for (const [i, it] of todo.entries()) {
       if (i) await sleep(1100);
       let pt = null;
-      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
+      try { pt = await geocode(it.name, near, fetch, { nominatim: env.GEOCODE_BASE || undefined, photon: env.PHOTON_BASE || undefined }, [`${it.name} ${it.note || ''}`, it.note]); } catch (e) { console.error('geocode failed', e); failed = true; break; } // 網路或被限流:不標記,下次再試
       stmts.push(env.DB.prepare('UPDATE items SET lat = ?, lng = ?, geo_tried = 1 WHERE id = ? AND trip_id = ?').bind(pt?.lat ?? null, pt?.lng ?? null, it.id, tripId));
       if (pt) { found++; near.push(pt); }
     }
