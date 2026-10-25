@@ -5,6 +5,7 @@ import { insertIndex, mergeFixed } from './schedule.js';
 import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from './nl.js';
 import { geocode } from './geocode.js';
 import { suggestStay } from '../public/geo.js';
+import { transitAdvice } from './transit.js';
 import { suggestPlaces } from './suggest.js';
 import { computeRoute, MODES, validPoint, sanitizeDeparture } from './route.js';
 import { translateText, translateImage, DIRECTIONS, IMAGE_RE, MAX_IMAGE_CHARS } from './translate.js';
@@ -308,6 +309,21 @@ async function handle(request, env) {
       await cache.put(key, new Response(JSON.stringify(result), { headers: { 'cache-control': `max-age=${departure || result.source === 'osrm' ? 3600 : 600}` } }));
     }
     return json(result);
+  }
+
+  // 大眾運輸怎麼搭(附近車站 + AI 說明);結果快取 7 天
+  if (parts[3] === 'transit' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const { from, to } = body;
+    if (!validPoint(from) || !validPoint(to)) return fail('座標格式不對');
+    const r3 = (n) => n.toFixed(3);
+    const key = new Request(`https://transit-cache.invalid/${r3(from.lat)},${r3(from.lng)}/${r3(to.lat)},${r3(to.lng)}`);
+    const hit = await caches.default.match(key);
+    if (hit) return json(await hit.json());
+    const r = await transitAdvice(env, { from: { ...from, name: clean(from.name, 40) }, to: { ...to, name: clean(to.name, 40) } });
+    if (!r) return fail('暫時查不到搭法,請用「怎麼去」看導航', 503);
+    await caches.default.put(key, new Response(JSON.stringify(r), { headers: { 'cache-control': 'max-age=604800' } }));
+    return json(r);
   }
 
   // 翻譯:文字(中↔日)
