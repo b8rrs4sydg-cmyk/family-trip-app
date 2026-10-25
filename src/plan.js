@@ -1,4 +1,5 @@
 // AI 排行程:把地點分配到各天並排序。AI 輸出一律驗證,失敗就用幾何方法保底。
+import { stayOf, isHeavy } from './schedule.js';
 
 const SYSTEM = `你是台灣旅遊行程規劃助手,使用者是家中長輩,請用簡單的繁體中文。
 任務:把給定的地點分配到指定天數,同一天的地點要地理上相近,並排成順暢的參觀順序(考慮路線不要來回折返、午餐時間、景點開放時段常識)。
@@ -9,6 +10,8 @@ const SYSTEM = `你是台灣旅遊行程規劃助手,使用者是家中長輩,�
 - 預設不要把已經排在某一天的地點換到別天,也不要打亂他們原本的順序;只有在使用者的想法明確要求時(例如「第三天想逛街」「把某地點移到別天」)才可以移動,而且只動必要的部分。
 - 「住宿」是每天出發與回來的地方(已排好,不在地點清單裡)。請讓每天的第一個地點、最後一個地點都盡量靠近住宿,整天的路線像一個圈:從住宿出發、逛完回到住宿,不要來回跨區。
 - 每個地點的 kind 是使用者標的類別:place 景點、meal 餐飲、hotel 住宿、transport 交通、flight 航班、other 其他。meal 要排在用餐時段(中午前後或傍晚),且靠近前後的景點;景點避免排在深夜。
+- 每個地點有 stayMinutes(預估停留分鐘)與 heavy(true 表示樂園、影城這類要玩大半天的整天行程)。每天停留時間加總加上移動大約不要超過 600 分鐘;heavy 的地點一天最多一個,絕對不要把兩個 heavy 排在同一天,前後一天也盡量別排滿。
+- 同一天優先放「距離近」「類型互補」的地點(例如一個景點配附近的餐飲與逛街),不要同一天全是同類型;停留時間長的行程前後要留空檔。
 - tips 是每天一句簡短提醒(如:早點出發、這天走路較多、記得預約)。
 - 若有「使用者的想法」,要優先照辦,並且仍遵守上面的規則:
   · 想把某地點「安排久一點/短一點」:在 stays 裡填那個地點的 id 與新的停留分鐘數(15 到 720);沒被要求的地點不要放進 stays。
@@ -121,7 +124,7 @@ export function parseAiResponse(result) {
 export async function planTrip(env, items, nDays, fixed = [], instruction = '', lodging = [], draft = null) {
   if (!items.length) return { days: Array.from({ length: nDays }, () => []), tips: [], stays: [], adds: [], usedAi: false };
   const list = items.map((i) => ({
-    id: i.id, name: i.name, kind: i.kind || undefined, stayMinutes: i.stay ?? undefined,
+    id: i.id, name: i.name, kind: i.kind || undefined, stayMinutes: stayOf(i) || undefined, heavy: isHeavy(i) || undefined,
     lat: i.lat != null ? +i.lat.toFixed(4) : undefined,
     lng: i.lng != null ? +i.lng.toFixed(4) : undefined,
   }));

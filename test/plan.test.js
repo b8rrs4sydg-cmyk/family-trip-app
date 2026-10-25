@@ -94,3 +94,34 @@ test('insertNearest: 新地點放進最順路的一天,不動原本的順序', a
   insertNearest(days, { id: 'x', name: '沒座標' });
   assert.ok(days.flat().some((x) => x.id === 'x'));
 });
+
+test('insertNearest: 已有樂園的那天不再排另一個樂園,就算它比較順路', async () => {
+  const { insertNearest } = await import('../src/schedule.js');
+  const park = { id: 'p1', name: 'Sanrio Puroland', kind: 'place', lat: 35.6245, lng: 139.4294 };
+  const days = [[park], [{ id: 'far', name: '淺草寺', kind: 'place', lat: 35.713, lng: 139.795 }]];
+  insertNearest(days, { id: 'p2', name: '東京迪士尼樂園', kind: 'place', lat: 35.6329, lng: 139.8804 });
+  assert.ok(days[1].some((x) => x.id === 'p2') && !days[0].some((x) => x.id === 'p2'));
+});
+test('insertNearest: 早餐市場排前面、燒肉排後面', async () => {
+  const { insertNearest } = await import('../src/schedule.js');
+  const mk = (id, lat) => ({ id, name: id, kind: 'place', lat, lng: 139.77 });
+  const day = () => [[mk('a', 35.66), mk('b', 35.67), mk('c', 35.68)]];
+  const d1 = day(); insertNearest(d1, { id: 'm', name: '築地場外市場', kind: 'meal', lat: 35.669, lng: 139.77 });
+  const d2 = day(); insertNearest(d2, { id: 'y', name: '敘敘苑燒肉', kind: 'meal', lat: 35.669, lng: 139.77 });
+  assert.ok(d1[0].findIndex((x) => x.id === 'm') < d2[0].findIndex((x) => x.id === 'y'));
+  assert.equal(d2[0].at(-1).id, 'y');
+});
+test('insertNearest: 一天排太滿就換別天', async () => {
+  const { insertNearest } = await import('../src/schedule.js');
+  const busy = [1, 2, 3, 4, 5].map((n) => ({ id: `b${n}`, name: `館${n}`, kind: 'place', stay: 120, lat: 35.7, lng: 139.7 }));
+  const days = [busy, [{ id: 'z', name: 'Z', kind: 'place', lat: 35.9, lng: 139.9 }]];
+  insertNearest(days, { id: 'n', name: '新景點', kind: 'place', stay: 120, lat: 35.7, lng: 139.7 });
+  assert.ok(days[1].some((x) => x.id === 'n'));
+});
+test('spreadHeavy: 同一天兩個樂園會拆開', async () => {
+  const { spreadHeavy } = await import('../src/schedule.js');
+  const days = [[{ id: 'a', name: '迪士尼樂園', kind: 'place', lat: 35.63, lng: 139.88 }, { id: 'b', name: '環球影城', kind: 'place', lat: 34.66, lng: 135.43 }], [{ id: 'c', name: '淺草寺', kind: 'place', lat: 35.71, lng: 139.79 }]];
+  spreadHeavy(days);
+  assert.equal(days[0].filter((x) => /樂園|影城/.test(x.name)).length, 1);
+  assert.equal(days.flat().length, 3);
+});

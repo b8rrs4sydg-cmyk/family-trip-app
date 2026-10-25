@@ -1,7 +1,7 @@
 import { importPlace, extractUrl, splitAddress } from './maps.js';
 import { planTrip } from './plan.js';
 import { ensureSchema } from './schema.js';
-import { insertIndex, mergeFixed, insertNearest } from './schedule.js';
+import { insertIndex, mergeFixed, insertNearest, spreadHeavy } from './schedule.js';
 import { findDay, findTime, hasScheduleCue, parseNaturalLanguage, KINDS } from './nl.js';
 import { geocode } from './geocode.js';
 import { suggestStay } from '../public/geo.js';
@@ -185,6 +185,7 @@ async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, 
     lists = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), mergeable);
     if (edgeFirst.length) lists[0] = [...edgeFirst, ...lists[0]];
     if (edgeLast.length) lists[nDays - 1] = [...lists[nDays - 1], ...edgeLast];
+    spreadHeavy(lists, new Set(fixed.map((f) => f.id))); // 同一天不要排兩個樂園這類整天行程
   }
   const days = lists.map((items, i) => [
     ...lp.head[i].map((sp) => entry(sp, '從住宿出發')),
