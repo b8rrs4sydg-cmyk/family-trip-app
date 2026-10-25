@@ -36,7 +36,7 @@ export const isLodging = (it) => it?.kind === 'hotel' || /飯店|旅館|旅店|�
 
 // 依地點名稱和類型建議停留多久(分鐘);交通、住宿不設
 export function suggestStay(name = '', kind = 'place') {
-  if (kind === 'flight' || kind === 'transport' || kind === 'hotel') return null;
+  if (kind === 'flight' || kind === 'transport' || kind === 'hotel' || isLodging({ name, kind })) return null;
   if (kind === 'meal') return 60;
   const n = String(name);
   if (/機場|空港|airport/i.test(n)) return 120;

@@ -206,7 +206,7 @@
   footer { margin-top: 32px; text-align: center; color: var(--muted); font-size: 12px; }
 
   /* ---------- 地圖標記 ---------- */
-  .pin { width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid #fff; background: var(--c, #2563eb); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; padding: 0; }
+  .pin { animation: pinpop .35s var(--ease) both; width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid #fff; background: var(--c, #2563eb); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; padding: 0; }
   .maplibregl-popup-content { font: 14px/1.45 -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; border-radius: 12px; padding: 10px 12px; color: #1d1d1f; min-width: 170px; }
   .pop-name { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
   .pop-sub { color: #6e6e73; font-size: 13px; }
@@ -228,6 +228,9 @@
   .sheet .actions { display: flex; gap: 8px; margin-top: 16px; }
   .sheet .actions .btn { flex: 1; }
   .qrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 2px; }
+  #sheetTitle:focus { outline: none; }
+  .more-actions { margin-top: 12px; }
+  .more-actions > summary { cursor: pointer; color: var(--primary); font-weight: 500; font-size: 13px; padding: 6px 0; }
   .menu { display: grid; gap: 6px; margin-top: 10px; }
   .menu button { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 0; background: var(--fill); font-weight: 500; font-size: 15px; cursor: pointer; text-align: left; }
   .menu button svg { color: var(--primary); }
@@ -258,6 +261,7 @@
   .btn, .link, .tchip, .dchip, .example, .icon-btn, .menu button { transition: background-color .18s var(--ease), color .18s var(--ease), transform .12s var(--ease), opacity .18s; }
   .link:active, .tchip:active, .dchip:active, .example:active { transform: scale(.96); }
   .card { transition: box-shadow .2s var(--ease), transform .2s var(--ease), opacity .2s; }
+  @keyframes pinpop { from { opacity: 0; scale: .4; } }
   .it.enter { animation: enter .38s var(--ease) both; }
   @keyframes enter { from { opacity: 0; transform: translateY(10px) scale(.985); } }
   .it.leaving { overflow: hidden; animation: leave .26s var(--ease) forwards; }
@@ -408,11 +412,7 @@
 <dialog id="sheet" aria-labelledby="sheetTitle">
   <form method="dialog" class="sheet">
     <div class="grab" aria-hidden="true"></div>
-    <h3 id="sheetTitle"></h3>
-    <div class="qrow">
-      <button class="btn soft" type="button" id="sUp"><i data-i="up"></i>往前移</button>
-      <button class="btn soft" type="button" id="sDown"><i data-i="down"></i>往後移</button>
-    </div>
+    <h3 id="sheetTitle" tabindex="-1"></h3>
     <div class="grid">
       <div><label class="f" for="sTime">時間</label><input class="field" type="time" id="sTime"></div>
       <div><label class="f" for="sDay">哪一天</label><select class="field" id="sDay"></select></div>
@@ -421,15 +421,22 @@
       <div><label class="f" for="sCost">花費(日圓 ¥)</label><input class="field" id="sCost" type="number" inputmode="numeric" min="0" step="1" placeholder="不填就是沒有"></div>
       <div class="full"><label class="f" for="sNote">備註(例如:要預約、幾點開門)</label><input class="field" id="sNote" maxlength="300"></div>
     </div>
+    <details class="more-actions">
+      <summary>更多:移動順序、複製到其他天、地圖位置</summary>
+    <div class="qrow" style="margin-top:10px">
+      <button class="btn soft" type="button" id="sUp"><i data-i="up"></i>往前移</button>
+      <button class="btn soft" type="button" id="sDown"><i data-i="down"></i>往後移</button>
+    </div>
     <div class="copybox">
-      <label class="f" for="sCopyDay" style="margin-top:14px">複製這個地點到其他天(例如住宿當每天的出發點、回來點)</label>
+      <label class="f" for="sCopyDay" style="margin-top:12px">複製到其他天(例如住宿當每天的出發點、回來點)</label>
       <div class="row" style="flex-wrap:nowrap">
         <select class="field" id="sCopyDay" style="flex:1"></select>
-        <select class="field" id="sCopyWhere" style="flex:1"><option value="start">當天最前面(出發)</option><option value="end">當天最後面(回來)</option></select>
+        <select class="field" id="sCopyWhere" style="flex:1"><option value="start">放最前面</option><option value="end">放最後面</option></select>
         <button class="btn soft" type="button" id="sCopy" style="flex:none">複製</button>
       </div>
     </div>
-    <p style="margin-top:12px"><button class="btn soft block" type="button" id="sPin"><i data-i="target"></i>在地圖上點選位置</button></p>
+    <p style="margin-top:10px"><button class="btn soft block" type="button" id="sPin"><i data-i="target"></i>在地圖上點選位置</button></p>
+    </details>
     <div class="actions">
       <button class="btn danger" type="button" id="sDel"><i data-i="trash"></i>刪除</button>
       <button class="btn" value="cancel">取消</button>
@@ -1281,10 +1288,16 @@ function drawMap(fit) {
   popup?.remove();
 
   const byDay = new Map();
+  // 位置幾乎相同的地點(例如同一座寺廟的好幾個項目)會疊在一起,用像素位移把它們散開成一圈
+  const stack = new Map();
+  for (const { it } of located) { const k = `${it.lat.toFixed(4)},${it.lng.toFixed(4)}`; stack.set(k, (stack.get(k) || 0) + 1); }
+  const seen = new Map();
   for (const { it, day, n } of located) {
     const pin = el('button', { class: 'pin', style: `--c:${dayColor(day)}`, 'aria-label': `第 ${day} 天 ${n} ${it.name}` }, String(n));
     pin.addEventListener('click', (e) => { e.stopPropagation(); if (!pick) openPopup(it, day); });
-    markers.push(new maplibregl.Marker({ element: pin }).setLngLat([it.lng, it.lat]).addTo(map));
+    const k = `${it.lat.toFixed(4)},${it.lng.toFixed(4)}`, total = stack.get(k), idx = seen.get(k) || 0; seen.set(k, idx + 1);
+    const ang = (idx / total) * Math.PI * 2 - Math.PI / 2, r = total > 1 ? 13 : 0;
+    markers.push(new maplibregl.Marker({ element: pin, offset: [Math.cos(ang) * r, Math.sin(ang) * r] }).setLngLat([it.lng, it.lat]).addTo(map));
     if (day > 0) { if (!byDay.has(day)) byDay.set(day, []); byDay.get(day).push([it.lng, it.lat]); }
   }
   map.getSource('routes')?.setData({
@@ -1426,6 +1439,7 @@ function openSheet(it, day, idx) {
   sel.value = String(it.day);
   $('sCopyDay').replaceChildren(el('option', { value: 'all' }, '每一天'), ...Array.from({ length: trip.days }, (_, i) => el('option', { value: i + 1 }, `第 ${i + 1} 天`)));
   $('sheet').showModal();
+  $('sheetTitle').focus({ preventScroll: true });
 }
 
 function setupSheets() {
