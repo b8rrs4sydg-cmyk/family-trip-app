@@ -666,6 +666,7 @@ function navUrl(it) {
 function groups() {
   const g = Array.from({ length: trip.days + 1 }, () => []);
   for (const it of trip.items) (g[it.day] || g[0]).push(it);
+  for (const arr of g) arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)); // 樂觀更新後 position 比陣列順序新
   return g;
 }
 
