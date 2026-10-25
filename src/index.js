@@ -124,11 +124,23 @@ async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0, hint = nu
 const isLodgingCopy = (r) => r.added_by === AI_LODGING || (r.added_by === COPY_MARK && isLodging(r));
 
 // 算出 AI 的排法(不寫入)。回傳的 days 每一格是:{id}(現有項目)、{copyOf,label}(住宿副本)、{add:{name,kind}}(AI 新增的地點)
-// 算出 AI 的排法(不寫入)。回傳的 days 每一格是:{id}(現有項目)、{copyOf,label}(住宿副本)、{add:{name,kind}}(AI 新增的地點)
 // scope:
 //   new    (預設,沒有想法時):已排在某天的項目一律不動;只把「還沒安排」的地點插進最順路的一天。
 //   adjust (有想法時):以目前排法為草稿請 AI 調整,沒被提到的盡量不動。
 //   all    (使用者明確要求重排整個行程):AI 重新分天。
+// 把項目分成「住宿副本」與「其他」。若只剩副本、沒有原始住宿(原本那筆被刪或改名了),
+// 就把最早的一筆副本升格成原始住宿,避免重排把全部住宿當成舊副本清掉。
+function splitLodging(results) {
+  let copies = results.filter(isLodgingCopy);
+  let real = results.filter((r) => !isLodgingCopy(r));
+  if (copies.length && !real.some((r) => isLodging(r))) {
+    const first = [...copies].sort((a, b) => (a.day || 99) - (b.day || 99) || (a.position ?? 0) - (b.position ?? 0))[0];
+    copies = copies.filter((c) => c !== first);
+    real = [...real, first];
+  }
+  return { copies, real };
+}
+
 // 機場/車站這類已排在某一天的「出入口」:去程在第一天最前面、回程在最後一天最後面,AI 重排不能動
 const GATEWAY = /機場|空港|airport|港口|碼頭/i;
 const isGateway = (r) => r.day > 0 && !r.time && (r.kind === 'flight' || r.kind === 'transport' || GATEWAY.test(String(r.name)));
@@ -137,7 +149,7 @@ async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, 
   const { results } = await env.DB.prepare(
     'SELECT id, name, lat, lng, day, position, time, kind, kind_set, fixed, stay, note, added_by FROM items WHERE trip_id = ?',
   ).bind(tripId).all();
-  const real = results.filter((r) => !isLodgingCopy(r));
+  const { real } = splitLodging(results);
   const hotels = real.filter((r) => isLodging(r));
   const gateways = real.filter((r) => isGateway(r) && !isLodging(r));
   const gwIds = new Set(gateways.map((g) => g.id));
@@ -199,10 +211,9 @@ async function buildProposal(env, tripId, nDays, instruction, draft, draftAdds, 
 // 套用(可能是使用者拖曳調整過的)排法。所有項目與欄位都重新驗證,不信任前端。
 async function applyProposal(env, tripId, nDays, body) {
   const { results } = await env.DB.prepare(
-    'SELECT id, name, lat, lng, day, kind, kind_set, url, note, added_by FROM items WHERE trip_id = ?',
+    'SELECT id, name, lat, lng, day, position, kind, kind_set, url, note, added_by FROM items WHERE trip_id = ?',
   ).bind(tripId).all();
-  const oldCopies = results.filter(isLodgingCopy);
-  const real = results.filter((r) => !isLodgingCopy(r));
+  const { copies: oldCopies, real } = splitLodging(results);
   const byId = new Map(real.map((r) => [r.id, r]));
   const src = Array.isArray(body.days) ? body.days.slice(0, nDays) : [];
   const placed = new Set();
