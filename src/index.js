@@ -362,6 +362,8 @@ async function handle(request, env) {
     const fixed = results.filter((r) => r.fixed && r.day > 0 && !isLodging(r));
     const movable = results.filter((r) => !(r.fixed && r.day > 0) && !isLodging(r));
     const plan = await planTrip(env, movable, exists.days, fixed, instruction, hotels);
+    // 沒有輸入想法時,不套用 AI 擅自改的停留時間與新增的地點(避免蓋掉使用者自己設的值)
+    if (!instruction) { plan.stays = []; plan.adds = []; }
     const byId = new Map(results.map((r) => [r.id, r]));
     const merged = mergeFixed(plan.days.map((ids) => ids.map((id) => byId.get(id))), fixed);
     const lp = lodgingPlan(hotels.map((h) => ({ id: h.id, day: h.day })), exists.days);
