@@ -130,7 +130,7 @@ export async function planTrip(env, items, nDays, fixed = [], instruction = '', 
   }));
   const messages = [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `天數:${nDays}\n住宿:${JSON.stringify(lodging.map((l) => ({ name: l.name, lat: l.lat != null ? +l.lat.toFixed(4) : undefined, lng: l.lng != null ? +l.lng.toFixed(4) : undefined, fromDay: l.day > 0 ? l.day : 1 })))}\n已固定行程:${JSON.stringify(fixed.map((f) => ({ day: f.day, time: f.time, title: f.name })))}\n地點:${JSON.stringify(list)}\n${draft ? `目前草稿(各天的地點 id 順序,使用者可能已手動調整過):${JSON.stringify(draft)}\n請以草稿為基礎,只依使用者的想法做必要的調整,沒被提到的部分盡量不動。\n` : ''}${instruction ? `使用者的想法:${instruction}\n` : ''}請輸出 {"days":[[id,...],...共${nDays}天],"tips":[每天一句提醒,共${nDays}句],"stays":[{"id":"","minutes":60}],"adds":[{"name":"","day":1,"kind":"place"}]}` },
+    { role: 'user', content: `天數:${nDays}\n住宿:${JSON.stringify(lodging.map((l) => ({ name: l.name, lat: l.lat != null ? +l.lat.toFixed(4) : undefined, lng: l.lng != null ? +l.lng.toFixed(4) : undefined, fromDay: l.day > 0 ? l.day : 1 })))}\n已固定行程:${JSON.stringify(fixed.map((f) => ({ day: f.day, time: f.time, title: f.name, note: f.kind === 'flight' && f.note ? String(f.note).slice(0, 60) : undefined })))}\n地點:${JSON.stringify(list)}\n${draft ? `目前草稿(各天的地點 id 順序,使用者可能已手動調整過):${JSON.stringify(draft)}\n請以草稿為基礎,只依使用者的想法做必要的調整,沒被提到的部分盡量不動。\n` : ''}${instruction ? `使用者的想法:${instruction}\n` : ''}請輸出 {"days":[[id,...],...共${nDays}天],"tips":[每天一句提醒,共${nDays}句],"stays":[{"id":"","minutes":60}],"adds":[{"name":"","day":1,"kind":"place"}]}` },
   ];
   const base = { messages, max_tokens: 1500, chat_template_kwargs: { enable_thinking: false } };
   // 先要求 json_schema;模型不支援就退回純文字再自行解析。

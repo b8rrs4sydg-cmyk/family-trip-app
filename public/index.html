@@ -407,6 +407,7 @@
         <details>
           <summary>可以這樣說</summary>
           <div class="examples">
+            <button class="example" type="button">IT202 1/15 14:25-18:35</button>
             <button class="example" type="button">第一天13:00從台灣飛往東京</button>
             <button class="example" type="button">最後一天13:00從東京飛往台灣</button>
             <button class="example" type="button">第二天晚上7點吃壽司</button>
@@ -1926,7 +1927,9 @@ function showTrip() {
     $('addText').value = '';
     fitNext = true;
     const lines = r.added.map((a) => `・${a.day ? `第 ${a.day} 天 ` : ''}${a.time ? a.time + ' ' : ''}${a.name}${a.badDay ? `(第 ${a.badDay} 天超出行程,先放在「還沒安排」)` : ''}`);
-    toast(`已加入 ${r.added.length} 筆\n${lines.join('\n')}`);
+    const fl = r.added.find((a) => a.flight);
+    const hint = fl ? (fl.needRoute ? '\n這個航班號查不到固定航線,請點開補上起訖(例如 TPE→NRT)' : fl.needTime ? '\n請點開補上起飛時間;有時間才能算抵達時間與安排當天行程' : '') : '';
+    toast(`已加入 ${r.added.length} 筆\n${lines.join('\n')}${hint}`);
     flash(r.added[0].id);
   };
 
