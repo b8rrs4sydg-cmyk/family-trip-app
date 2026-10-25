@@ -80,7 +80,7 @@ async function insertItem(env, tripId, nDays, e) {
 }
 
 // 「加入」:貼連結 → 匯入地點;用說的 → AI 拆成多筆行程。回傳新增的項目摘要。
-async function smartAdd(env, tripId, nDays, text, who) {
+async function smartAdd(env, tripId, nDays, text, who, defaultDay = 0) {
   const { url } = extractUrl(text);
 
   if (url) {
@@ -91,14 +91,15 @@ async function smartAdd(env, tripId, nDays, text, who) {
     for (const tok of [d?.text, t?.text]) if (tok) rest = rest.replace(tok, ' ');
     const place = await importPlace(rest);
     if (!place.name) throw new Error(place.cid ? '這種連結(含 cid)沒有地點資訊。請在 Google 地圖按「分享」重新複製連結,或直接輸入地點名稱' : '讀不到地點名稱,請改貼「分享」的連結,或直接輸入地點名稱');
-    const day = d?.day && d.day <= nDays ? d.day : 0;
-    const e = { ...place, day, time: t?.time ?? null, kind: 'place', fixed: day > 0, who };
+    const explicit = d?.day && d.day <= nDays ? d.day : 0;
+    const day = explicit || defaultDay;
+    const e = { ...place, day, time: t?.time ?? null, kind: 'place', fixed: explicit > 0, who };
     return [{ id: await insertItem(env, tripId, nDays, e), name: place.name, day, time: e.time }];
   }
 
   if (!hasScheduleCue(text) && text.length <= 30) {
-    const id = await insertItem(env, tripId, nDays, { name: text, day: 0, kind: 'place', who });
-    return [{ id, name: text, day: 0, time: null }];
+    const id = await insertItem(env, tripId, nDays, { name: text, day: defaultDay, kind: 'place', who });
+    return [{ id, name: text, day: defaultDay, time: null }];
   }
 
   const { entries } = await parseNaturalLanguage(env, text, nDays);
@@ -110,9 +111,9 @@ async function smartAdd(env, tripId, nDays, text, who) {
       .bind(tripId, e.day, e.title, e.time ?? '').first();
     if (dup) { added.push({ id: dup.id, name: e.title, day: e.day, time: e.time, duplicate: true }); continue; }
     const id = await insertItem(env, tripId, nDays, {
-      name: e.title, note: e.note, day: e.day, time: e.time, kind: e.kind, fixed: e.day > 0, who,
+      name: e.title, note: e.note, day: e.day || defaultDay, time: e.time, kind: e.kind, fixed: e.day > 0, who,
     });
-    added.push({ id, name: e.title, day: e.day, time: e.time, badDay: e.badDay });
+    added.push({ id, name: e.title, day: e.day || defaultDay, time: e.time, badDay: e.badDay });
   }
   return added;
 }
@@ -178,11 +179,39 @@ async function handle(request, env) {
     const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE trip_id = ?').bind(tripId).first();
     if (cnt.n >= MAX_ITEMS) return fail('項目太多了,請先刪除一些');
     try {
-      const added = await smartAdd(env, tripId, exists.days, text, clean(body.who, 20));
+      const dd = Number(body.day);
+      const added = await smartAdd(env, tripId, exists.days, text, clean(body.who, 20), Number.isInteger(dd) && dd >= 1 && dd <= exists.days ? dd : 0);
       return json({ added });
     } catch (e) {
       return fail(e.message || '無法加入,請再試一次');
     }
+  }
+
+  // 復原刪除:把先前刪掉的項目原樣放回去(含原本的天與位置)
+  if (parts[3] === 'items' && parts.length === 5 && parts[4] === 'restore' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const it = body.item || {};
+    const name = clean(it.name, 80);
+    const day = Number.isInteger(it.day) && it.day >= 0 && it.day <= exists.days ? it.day : 0;
+    if (!name) return fail('資料格式不對');
+    const id = typeof it.id === 'string' && /^[0-9a-f-]{36}$/.test(it.id) ? it.id : crypto.randomUUID();
+    if (await env.DB.prepare('SELECT 1 FROM items WHERE id = ?').bind(id).first()) return json({ ok: true, already: true });
+    const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+    const lat = num(it.lat), lng = num(it.lng);
+    const { results } = await env.DB.prepare('SELECT id FROM items WHERE trip_id = ? AND day = ? ORDER BY position').bind(tripId, day).all();
+    const order = results.map((r) => r.id);
+    order.splice(Math.min(Math.max(0, Number(it.position) || 0), order.length), 0, id);
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO items (id, trip_id, day, position, name, lat, lng, url, note, added_by, time, kind, fixed, cost, geo_tried, travel, stay)
+         VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, tripId, day, name, lat, lng, clean(it.url, 500) || null, clean(it.note, 300), clean(it.added_by, 40),
+        TIME_RE.test(String(it.time ?? '')) ? String(it.time).padStart(5, '0') : null, KINDS.includes(it.kind) ? it.kind : 'place', day > 0 && it.fixed ? 1 : 0,
+        num(it.cost), lat != null ? 2 : Math.min(2, Number(it.geo_tried) || 0), MODES.includes(it.travel) ? it.travel : null, num(it.stay)),
+      ...layoutStatements(env, tripId, { [day]: order }),
+      bump(env, tripId),
+    ]);
+    return json({ ok: true, id });
   }
 
   // 把這個地點複製到其他天(例如住宿複製成每天的「出發點」或「回來點」)
