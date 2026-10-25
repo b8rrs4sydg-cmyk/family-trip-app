@@ -1,0 +1,118 @@
+# 家人旅行規劃
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/b8rrs4sydg-cmyk/Trip)
+
+給家中長輩用的簡單旅遊規劃網頁:把 Google 地圖的分享連結貼進來,AI 幫忙分天排順序,家人(約 5 人)可同時編輯。
+
+跑在 Cloudflare 上:Workers(API 與網頁)、D1(資料庫)、Workers AI(排行程)。基本功能不需要任何金鑰;只有「即時路況」(選用)需要自己的 Google 金鑰。
+
+## 一鍵部署
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/b8rrs4sydg-cmyk/Trip)
+
+直接連結(同上):<https://deploy.workers.cloudflare.com/?url=https://github.com/b8rrs4sydg-cmyk/Trip>
+
+1. 按上面的 **Deploy to Cloudflare** 按鈕,登入 Cloudflare 帳號並授權 GitHub。
+2. 在設定頁面確認三個名字,**都要是你帳號裡還沒用過的**,否則會建立失敗:
+   - **GitHub 儲存庫名稱**:按鈕會在你的 GitHub 帳號建立一份複本,例如 `family-trip-app`(不能和已有的儲存庫同名,包括原本的 `Trip`)。
+   - **Worker 名稱**:預設 `family-trip`,決定網址 `https://<Worker 名稱>.<你的帳號>.workers.dev`。如果舊的 Worker 還在,請改名或先刪除。
+   - **資料庫名稱**:預設 `family-trip-db`。如果舊的資料庫還在,請改名(新名字會是一個全新、空的資料庫)。
+3. 按「Create and deploy」。資料庫(D1)和 AI 會自動建立並綁定,資料表第一次使用時自動建立,不需要跑任何 migration。
+4. 建置完成後打開網址就能用。第一次開啟會自動建好資料表。
+
+> 按鈕需要這個 GitHub 儲存庫是**公開**的。程式裡沒有任何金鑰或個人資料,可以放心公開。
+
+### 之後怎麼更新
+
+按鈕建立的是一份**獨立的複本**,不是 fork,所以這個儲存庫(`Trip`)有新版時,你的複本不會自動跟著更新。要更新時任選一種:
+
+- 把 `Trip` 最新的檔案複製到你的複本儲存庫(**保留你複本裡的 `wrangler.jsonc`**,裡面有你資料庫的 ID),推送到 `main`,Cloudflare 會自動重新建置。
+- 或刪掉舊的 Worker,重新按一次上面的按鈕(新的資料庫是空的,舊行程不會帶過去)。
+
+### 選用:即時路況
+
+不設定也能用。要讓移動時間包含即時路況,請看下面「啟用即時路況」。
+
+## 功能
+
+- **地圖**:每天一種顏色的編號標記,同一天的地點用虛線連起來;可以只看某一天。點標記會彈出導航與「在行程中看」,清單上也有「地圖」按鈕。手機用下方的「行程 / 地圖」切換,電腦並排顯示。
+- **一個輸入框,三種加入方式**:貼 Google 地圖連結、打地名、或直接用說的(見下)。只打地名的地點會自動在地圖上找位置。
+- **用說的建立行程**:例如「第一天13:00從台灣飛往東京,第五天13:00從東京飛往台灣」,會自動在第 1 天和第 5 天建立對應的航班;也可以說「第二天晚上7點吃壽司」「最後一天中午退房」。連結前面可以加天數與時間,例如「第三天14:00 https://maps.app.goo.gl/…」。
+- **AI 排行程**:依距離把還沒指定天數的地點分到每一天;你用說的指定好的行程(如航班)不會被移動,AI 會配合它們安排。
+- **AI 推薦景點**:根據旅行名稱(寫上目的地更準)和已加的地點,推薦順路的景點與餐廳,按「加入」就進行程。
+- **拖曳排序**:按住每張卡片右上角的「≡」拖動,可以在同一天內換順序,也可以拖到別天(放在卡片上半部就插在它前面,下半部插在後面,放到某天的空白處就加到那天最後)。不方便拖的人仍可用 ↑ ↓ 與「編輯」裡的「哪一天」。
+- **時間軸與移動時間**:每個項目有時間、類型圖示、備註、花費。站與站之間顯示移動時間與距離,後面標明來源,並附「怎麼去」(開 Google 地圖路線):
+  - 🚦 **即時**:出發當天(依「設定」的出發日期判斷),向 Google 查即時路況與班次(**需要設定 Google 金鑰**,見下)。
+  - 🕘 **依預定時間預測**:出發日在未來 90 天內,依該天、前一個地點的時間預測。
+  - **依道路計算(無路況)**:沒有金鑰、或不是近期行程時,步行與開車用 OpenStreetMap 的道路路網計算,不含路況。
+  - **估算**:大眾運輸沒有免費資料來源,用直線距離估算。
+  - 在「設定」可選移動方式:自動(近的走路、遠的搭車)/ 大眾運輸 / 開車 / 步行(只影響這支手機)。
+- **機票與飯店**:航班與住宿項目有「查機票」「查房價」按鈕,帶入路線與日期開 Google 航班 / Booking.com 搜尋。這是搜尋連結,不是即時價格;沒有訂位功能。
+- **花費與日期**:每項可填花費,每天和全程自動加總;設定出發日期後,每天旁邊顯示日期與星期。
+- **分享**:「分享給家人」傳連結;「複製行程文字」一鍵複製整份行程,貼到 LINE。
+- **共同編輯**:約 5 人用同一個連結,每幾秒自動同步。
+
+## 怎麼用
+
+1. 首頁輸入旅行名稱(建議寫目的地)和天數,按「開始規劃」。
+2. 用輸入框加入地點與行程;按「讓 AI 幫你排」分天。
+3. 點「編輯」改時間、名稱、備註、花費、換天或刪除;也可用 ↑ ↓ 調整順序。
+4. 右上「設定」可改名稱、天數、出發日期。
+5. 按「分享給家人」,把網址傳到 LINE。**知道網址的人都能編輯**,網址本身就是通行證(12 碼隨機字元),請不要公開張貼。
+
+## 手動部署(不用按鈕)
+
+需要 Node 20 以上與 Cloudflare 帳號:
+
+```sh
+npm install
+npx wrangler login
+npm run deploy      # 第一次會自動建立 D1 資料庫
+```
+
+## 本機開發
+
+```sh
+npm install
+npm run dev         # 本機自動建立測試資料庫;Workers AI 走遠端,需要 npx wrangler login
+npm test
+```
+
+沒登入時 `wrangler dev` 無法啟動 AI 綁定;只想測 API 的話,可暫時從 `wrangler.jsonc` 拿掉 `ai` 區塊,「AI 幫我排行程」會自動改用依距離排序的保底方案。
+
+## 模型與費用
+
+預設模型在 `wrangler.jsonc` 的 `AI_MODEL`(目前是 `@cf/google/gemma-4-26b-a4b-it`)。Workers AI 每天有 10,000 neurons 免費額度,一次排程約幾十 neurons,五個人用不完;Workers 與 D1 在免費額度內也是 $0。模型清單和價格以 [Cloudflare 官方文件](https://developers.cloudflare.com/workers-ai/platform/pricing/)為準,若模型下架,改這個變數即可。
+
+AI 輸出一律驗證:未知或重複的地點會被丟掉、漏掉的會補回;AI 失敗或逾時則改用依距離排序。
+
+## 啟用即時路況(選用)
+
+沒有這一步,App 一樣能用,只是移動時間不含即時路況。要啟用:
+
+1. 到 [Google Cloud Console](https://console.cloud.google.com/) 建立專案、開啟帳單,啟用 **Routes API**,建立 API 金鑰,並把金鑰限制為只能呼叫 Routes API。
+2. **務必在「配額」頁設定每日上限**(例如每天 200 次),避免有人拿到你的行程網址就刷爆額度。
+3. 把金鑰設成 Worker 的 secret:
+   - 命令列:`npx wrangler secret put GOOGLE_MAPS_API_KEY`
+   - 或在 Cloudflare 網頁:Workers & Pages → 你的 Worker → Settings → Variables and Secrets → 新增 Secret,名稱 `GOOGLE_MAPS_API_KEY`。
+
+用量與費用:只有「出發當天」和「未來 90 天內且有填日期」的行程才會呼叫 Google;出發當天每 5 分鐘更新一次,同一對地點與交通方式 10 分鐘內共用快取。依 Google 官方價目表,Compute Routes 每個 SKU 每月有免費額度(Essentials 約 10,000 次、Pro 約 5,000 次),超過後約每千次 US$5 到 10;**但「開車即時路況」與「大眾運輸」各算哪一級,我查不到明確說明**,請以 [官方價目表](https://developers.google.com/maps/billing-and-pricing/pricing) 與你的帳單為準。我沒有在真實的 Google 金鑰下測試過,請求格式只用單元測試驗證。
+
+## 地圖與定位用到的服務
+
+- 地圖:[MapLibre GL JS](https://maplibre.org/)(BSD-3)搭配 [OpenFreeMap](https://openfreemap.org/) 圖磚,免費、免金鑰,資料 © OpenStreetMap 貢獻者。
+- 地名轉座標:OpenStreetMap 的 [Nominatim](https://nominatim.org/release-docs/latest/api/Search/)。依其使用規範,伺服器每秒最多查一次、帶可辨識的 User-Agent,而且查到的座標存進資料庫,同一地點不會重查。供家人少量使用沒問題;若要大量使用,請改用自架服務並設定 `wrangler.jsonc` 的 `vars.GEOCODE_BASE`(相容 Nominatim 的 `/search`)。
+- 道路路網計算:[FOSSGIS 的 OSRM 服務](https://routing.openstreetmap.de/)(步行、開車)。供少量使用;要大量使用請自架並設定 `vars.OSRM_BASE`。
+- 瀏覽器會從 jsDelivr 載入 MapLibre(已加完整性雜湊),從 OpenFreeMap 載入圖磚。
+
+## 已知限制
+
+- 沒有帳號系統;連結外流就等於開放編輯。需要更嚴格可再加 Cloudflare Access。
+- Google 短網址若被導向同意頁或需登入的頁面,會讀不到名稱,畫面會請使用者改打地點名稱。
+- 同時編輯採「最後寫入為準」,每 4 秒同步一次。
+- 用說的建立行程時,AI 解析失敗會改用規則解析,常見說法(第N天、幾點、飛往、入住)都能處理,但很口語的句子可能解析不完整,建立後請確認一下。
+- 地名可能查到同名的別處(例如「中央車站」):在「編輯」改成更完整的名稱,或直接貼 Google 地圖連結。查不到位置的地點不會顯示在地圖上,但仍在清單裡。
+- 沒有設定 Google 金鑰時沒有即時路況,大眾運輸只是直線距離估算;要準確請點「怎麼去」看 Google 地圖。
+- 拖曳排序用指標事件實作,在桌面瀏覽器測試過;手機觸控我沒有在真機上測,若按住拖動時頁面會跟著捲動,請告訴我。
+- 沒有離線模式;沒有機票/飯店的即時價格搜尋與訂位(只有帶入條件的搜尋連結)。
+- 尚未實作:翻譯。

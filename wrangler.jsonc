@@ -1,0 +1,16 @@
+{
+  "name": "family-trip-app",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "ai": { "binding": "AI" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "family-trip-db","database_id": "7e0d9ee2-9362-4c33-90f5-3a664670ec29"
+    }
+  ],
+  "vars": {
+    "AI_MODEL": "@cf/google/gemma-4-26b-a4b-it"
+  }
+}
